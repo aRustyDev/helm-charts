@@ -1,6 +1,6 @@
 apiVersion: v2
 name: holmes
-description: A Helm chart for Kubernetes
+description: A Helm chart to deploy OLM in kubernetes
 icon: https://avatars.githubusercontent.com/u/38202270?s=280&v=4
 
 # A chart can be either an 'application' or a 'library' chart.
