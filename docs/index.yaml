@@ -3,13 +3,13 @@ entries:
   holmes:
   - apiVersion: v2
     appVersion: 1.16.0
-    created: "2023-08-23T21:06:35.447396-04:00"
+    created: "2023-09-15T17:10:35.447396-04:00"
     description: A Helm chart for Kubernetes
-    digest: 17cf8cb618d361ee566072e9428de4e15dc858ccc3ff749aaa87b218623f012e
+    digest: b3c4086b9e915af8030a8a177e180e92f52b6eff2b90bfab5f93925c8e2ea572
     icon: https://avatars.githubusercontent.com/u/38202270?s=280&v=4
     name: holmes
     type: application
     urls:
-    - https://arustydev.github.io/helm-charts/holmes-0.1.0.tgz
-    version: 0.1.0
+    - https://arustydev.github.io/helm-charts/holmes-0.1.1.tgz
+    version: 0.1.1
 generated: "2023-08-23T21:06:35.440161-04:00"
