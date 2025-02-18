@@ -1,0 +1,26 @@
+# Chrony
+
+## Flags
+
+`-f` : Specify the configuration file
+> Default "/etc/chrony.conf"
+
+`-d`: the program will not detach itself from the terminal, and all messages will be written to the terminal instead of syslog
+
+`-t <timeout>` : This option sets a timeout (in seconds) after which chronyd will exit. If the clock is not synchronised, it will exit with a non-zero status. This is useful with the -q or -Q option to shorten the maximum time waiting for measurements, or with the -r option to limit the time when chronyd is running, but still allow it to adjust the frequency of the system clock.
+
+`-L <file>` : This option specifies the minimum severity level of messages to be written to the log file, syslog, or terminal. The following levels can be specified: -1 (debug, if compiled with enabled support for debugging), 0 (informational), 1 (warning), 2 (non-fatal error), and 3 (fatal error). The default value is 0.
+
+`-s` : This option will set the system clock from the computer’s real-time clock (RTC) or to the last modification time of the file specified by the driftfile directive. Real-time clocks are supported only on Linux. If used in conjunction with the -r flag, chronyd will attempt to preserve the old samples after setting the system clock from the RTC. This can be used to allow chronyd to perform long term averaging of the gain or loss rate across system reboots, and is useful for systems with intermittent access to network that are shut down when not in use. For this to work well, it relies on chronyd having been able to determine accurate statistics for the difference between the RTC and system clock last time the computer was on. If the last modification time of the drift file is later than both the current time and the RTC time, the system time will be set to it to restore the time when chronyd was previously stopped. This is useful on computers that have no RTC or the RTC is broken (e.g. it has no battery).
+
+`-u <username>` : This option sets the name of the system user to which chronyd will switch after start in order to drop root privileges. It overrides the user directive. The compiled-in default value is root. On Linux, chronyd needs to be compiled with support for the libcap library. On macOS, FreeBSD, NetBSD, and illumos chronyd forks into two processes. The child process retains root privileges, but can only perform a very limited range of privileged system calls on behalf of the parent.
+
+`-U` : This option disables a check for root privileges to allow chronyd to be started under a non-root user, assuming the process will have all capabilities (e.g. provided by the service manager) and access to all files, directories, and devices, needed to operate correctly in the specified configuration. Note that different capabilities might be needed with different configurations and different Linux kernel versions. Starting chronyd under a non-root user is not recommended when the configuration is not known, or at least limited to specific directives
+
+`-F <level>` : This option configures system call filters loaded by chronyd processes if it was compiled with support for the Linux secure computing (seccomp) facility. Three levels are defined: 0, 1, 2. The filters are disabled at level 0. At levels 1 and 2, chronyd will be killed if it makes a system call which is blocked by the filters. The level can be specified as a negative number to trigger the SIGSYS signal instead of SIGKILL, which can be useful for debugging. The default value is 0. At level 1, the filters allow only selected system calls that are normally expected to be made by chronyd. Other system calls are blocked. This level is recommended only if it is known to work on the version of the system where chrony is installed. The filters need to allow also system calls made by libraries that chronyd is using (e.g. libc), but different versions or implementations of the libraries might make different system calls. If the filters are missing a system call, chronyd could be killed even in normal operation. At level 2, the filters block only a small number of specific system calls (e.g. fork and exec). This approach should avoid false positives, but the protection of the system against a compromised chronyd process is much more limited. The filters cannot be enabled with the mailonchange directive.
+
+`-P <priority>` : On Linux, FreeBSD, NetBSD, and illumos this option will select the SCHED_FIFO real-time scheduler at the specified priority (which must be between 0 and 100). On macOS, this option must have either a value of 0 to disable the thread time constraint policy or 1 for the policy to be enabled. Other systems do not support this option. The default value is 0.
+
+`-m` : This option will lock chronyd into RAM so that it will never be paged out. This mode is only supported on Linux, FreeBSD, NetBSD, and illumos
+
+`-x` : This option disables the control of the system clock. chronyd will not try to make any adjustments of the clock. It will assume the clock is free running and still track its offset and frequency relative to the estimated true time. This option allows chronyd to be started without the capability to adjust or set the system clock (e.g. in some containers) to operate as an NTP server.

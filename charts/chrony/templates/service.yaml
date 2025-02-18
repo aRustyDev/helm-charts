@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "chrony.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "chrony.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ include "chrony.port" . }}
+      targetPort: ntpd
+      protocol: UDP
+      name: chrony
+  selector:
+    {{- include "chrony.selectorLabels" . | nindent 4 }}

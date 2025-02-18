@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "chrony.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "chrony.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "chrony.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "chrony.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      securityContext:
+        {{ include "chrony.securityContext" . | nindent 8 }}
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{ include "chrony.securityContext" . | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 8 }}
+          {{- end }}
+          command: 
+            - "chronyc"
+            - "-f" # Specify the configuration file
+            - "/etc/chrony.conf"
+            - "-d" # the program will not detach itself from the terminal, and all messages will be written to the terminal instead of syslog
+            # - "-dd" # TODO: add debug flag
+            - "-t" # sets a timeout (in seconds) after which chronyd will exit
+            - "{{ .Values.opts.timeOut }}"
+            - "-L" # specifies the minimum severity level of messages to be written
+            - "{{ include "chrony.logLevel" . }}"
+            - "-s" # set the system clock from the computer’s real-time clock (RTC) or to the last modification time of the file specified by the driftfile directive
+            - "-u" # sets the name of the system user to which chronyd will switch after start in order to drop root privileges
+            - "chronyd"
+            - "-U" # disables a check for root privileges to allow chronyd to be started under a non-root user
+            - "-F" # configures system call filters loaded by chronyd processes
+            - "level"
+            - "-P" # select the SCHED_FIFO real-time scheduler at the specified priority
+            - "{{ .Values.opts.priority }}" # Specify the priority of the process
+            - "-m" # lock chronyd into RAM so that it will never be paged out
+            - "-x" # disables the control of the system clock
+            - "{{ .Values.opts.resolve }}" # Specify ipv4 or ipv6 for hostname resolution
+          ports:
+            - name: ntpd
+              containerPort: "123"
+              protocol: UDP
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.volumeMounts }}
+          volumeMounts:
+            - name: config-volume # TODO
+              mountPath: /etc/config
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.volumes }}
+      volumes:
+        - name: config-volume
+          configMap:
+            # Provide the name of the ConfigMap containing the files you want
+            # to add to the container
+            name: special-config
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
