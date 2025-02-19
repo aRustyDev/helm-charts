@@ -3,16 +3,22 @@ repos:
     rev: v5.0.0
     hooks:
       - id: check-yaml
+        args: [--allow-multiple-documents]
       - id: end-of-file-fixer
+      - id: check-case-conflict
+      - id: check-vcs-permalinks
       - id: trailing-whitespace
       - id: check-byte-order-marker
       - id: check-symlinks
       - id: check-merge-conflict
       - id: mixed-line-ending
       - id: no-commit-to-branch
-      - id: sort-simple-yaml
+        args: [--branch, staging, --pattern, ci.*, --branch, main]
       - id: check-added-large-files
         args: ['--maxkb=51200']
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: check-json
   - repo: https://github.com/markdownlint/markdownlint
     rev: v0.13.0
     hooks:
@@ -21,6 +27,7 @@ repos:
     rev: v2.4.1
     hooks:
       - id: codespell
+        exclude: ^package.*\.json$
   - repo: https://github.com/crate-ci/typos
     rev: v1.29.7
     hooks:
@@ -57,3 +64,9 @@ repos:
       - id: ggshield-push
         language_version: python3
         stages: [pre-push]
+  # - repo: https://github.com/alessandrojcm/commitlint-pre-commit-hook
+  #   rev: v9.21.0
+  #   hooks:
+  #     - id: commitlint
+  #       stages: [commit-msg]
+  #       additional_dependencies: ['@commitlint/cli', '@commitlint/config-conventional']
