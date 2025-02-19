@@ -1,0 +1,59 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-byte-order-marker
+      - id: check-symlinks
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+      - id: no-commit-to-branch
+      - id: sort-simple-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=51200']
+  - repo: https://github.com/markdownlint/markdownlint
+    rev: v0.13.0
+    hooks:
+      - id: markdownlint
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.1
+    hooks:
+      - id: codespell
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.29.7
+    hooks:
+      - id: typos
+  - repo: https://github.com/jorisroovers/gitlint
+    rev: v0.19.1
+    hooks:
+      - id: gitlint
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.2.2
+    hooks:
+      # - id: commitizen
+      - id: commitizen-branch
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.23.3
+    hooks:
+      - id: gitleaks
+  - repo: https://github.com/mrtazz/checkmake
+    rev: 0.2.2
+    hooks:
+      - id: checkmake
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.0.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [] # optional: list of Conventional Commits types to allow e.g. [feat, fix, ci, chore, test]
+  - repo: https://github.com/gitguardian/ggshield
+    rev: v1.36.0
+    hooks:
+      - id: ggshield
+        language_version: python3
+        stages: [pre-commit]
+      - id: ggshield-push
+        language_version: python3
+        stages: [pre-push]
