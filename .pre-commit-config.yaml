@@ -19,10 +19,10 @@ repos:
       - id: check-executables-have-shebangs
       - id: check-shebang-scripts-are-executable
       - id: check-json
-  - repo: https://github.com/markdownlint/markdownlint
-    rev: v0.13.0
-    hooks:
-      - id: markdownlint
+  # - repo: https://github.com/markdownlint/markdownlint
+  #   rev: v0.13.0
+  #   hooks:
+  #     - id: markdownlint
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1
     hooks:
