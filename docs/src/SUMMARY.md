@@ -18,6 +18,11 @@
   - [ADR-001: Charts Branch for Artifacts](./adr/001-charts-branch.md)
   - [ADR-002: Multi-Endpoint Distribution](./adr/002-multi-endpoint.md)
   - [ADR-003: Semantic Versioning with Release-Please](./adr/003-semantic-versioning.md)
+  - [ADR-004: Helm Chart Signing and Provenance](./adr/004-chart-signing.md)
+
+# Security
+
+- [Chart Verification](./security/verification.md)
 
 # Contributing
 

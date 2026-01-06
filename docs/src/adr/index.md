@@ -13,6 +13,7 @@ An Architecture Decision Record (ADR) captures an important architectural decisi
 | [ADR-001](./001-charts-branch.md) | Charts Branch for Artifacts | Accepted |
 | [ADR-002](./002-multi-endpoint.md) | Multi-Endpoint Distribution | Accepted |
 | [ADR-003](./003-semantic-versioning.md) | Semantic Versioning with Release-Please | Accepted |
+| [ADR-004](./004-chart-signing.md) | Helm Chart Signing and Provenance | Accepted |
 
 ## ADR Template
 

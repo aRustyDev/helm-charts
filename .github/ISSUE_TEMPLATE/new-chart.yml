@@ -1,0 +1,94 @@
+name: New Chart Request
+description: Request a new Helm chart to be added
+title: "[New Chart] "
+labels: ["new-chart", "enhancement"]
+body:
+  - type: input
+    id: chart-name
+    attributes:
+      label: Proposed Chart Name
+      description: What should the chart be named?
+      placeholder: my-application
+    validations:
+      required: true
+
+  - type: input
+    id: upstream-project
+    attributes:
+      label: Upstream Project
+      description: Link to the upstream project repository
+      placeholder: https://github.com/org/project
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the application and why it should be added
+      placeholder: |
+        This application provides...
+
+        Use cases:
+        - ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment-type
+    attributes:
+      label: Primary Deployment Type
+      description: What is the main workload type?
+      options:
+        - Deployment
+        - StatefulSet
+        - DaemonSet
+        - CronJob
+        - Job
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Does this chart require other charts or external services?
+      placeholder: |
+        - PostgreSQL database
+        - Redis cache
+        - etc.
+
+  - type: textarea
+    id: existing-charts
+    attributes:
+      label: Existing Charts
+      description: Are there existing Helm charts for this project? Why create a new one?
+      placeholder: |
+        - Official chart at https://... (reason not to use)
+        - Community chart at https://... (reason not to use)
+
+  - type: checkboxes
+    id: features
+    attributes:
+      label: Requested Features
+      description: What features should the chart include?
+      options:
+        - label: Ingress configuration
+        - label: ServiceMonitor for Prometheus
+        - label: PodDisruptionBudget
+        - label: HorizontalPodAutoscaler
+        - label: NetworkPolicy
+        - label: PersistentVolumeClaim
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I have checked that this chart doesn't already exist in this repository
+          required: true
+        - label: I have checked ArtifactHub for existing charts
+          required: true
+        - label: I am willing to help maintain this chart
+          required: false
