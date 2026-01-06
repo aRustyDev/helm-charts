@@ -39,6 +39,8 @@ Uses [chart-testing](https://github.com/helm/chart-testing) to validate charts.
 
 **Note:** Version increment checking is disabled (`check-version-increment: false`). Version bumps are handled by [release-please](./release-please.md) based on conventional commits.
 
+**Release-Please PRs:** Tests are skipped for release-please PRs (branches starting with `release-please--`) since they only contain version bumps and changelog updates that were already tested in the originating PR. Placeholder jobs report success to satisfy required status checks.
+
 ## Manual Testing
 
 To test all charts regardless of changes:
