@@ -1,24 +1,70 @@
-# holmes
+# aRustyDev Helm Charts
 
-Helm chart for OLM, b/c I couldn't find anything already made and accessible in artifacthub.io
+Helm charts repository with dual distribution endpoints.
+
+## Available Charts
+
+| Chart | Description | Version |
+|-------|-------------|---------|
+| [holmes](./charts/olm) | OLM (Operator Lifecycle Manager) for Kubernetes | 0.1.0 |
+| [mdbook-htmx](./charts/mdbook-htmx) | HTMX-enhanced documentation backend for MDBook | 0.1.0 |
 
 ## Usage
 
-[Helm](https://helm.sh) must be installed to use the charts.  Please refer to
+[Helm](https://helm.sh) must be installed to use the charts. Please refer to
 Helm's [documentation](https://helm.sh/docs) to get started.
 
-Once Helm has been set up correctly, add the repo as follows:
+### Add Repository
 
-  helm repo add <alias> https://<orgname>.github.io/helm-charts
+Choose either endpoint (both serve identical content):
 
-If you had already added this repo earlier, run `helm repo update` to retrieve
-the latest versions of the packages.  You can then run `helm search repo
-<alias>` to see the charts.
+```bash
+# GitHub Pages (primary)
+helm repo add arustydev https://arustydev.github.io/helm-charts
 
-To install the <chart-name> chart:
+# Cloudflare Pages (mirror)
+helm repo add arustydev https://charts.arusty.dev
+```
 
-    helm install my-<chart-name> <alias>/<chart-name>
+### Update Repository
 
-To uninstall the chart:
+```bash
+helm repo update
+```
 
-    helm delete my-<chart-name>
+### Search Charts
+
+```bash
+helm search repo arustydev
+```
+
+### Install a Chart
+
+```bash
+# Install holmes (OLM)
+helm install my-olm arustydev/holmes
+
+# Install mdbook-htmx
+helm install my-docs arustydev/mdbook-htmx
+```
+
+### Uninstall a Chart
+
+```bash
+helm delete my-olm
+helm delete my-docs
+```
+
+## Contributing
+
+Charts follow [conventional commits](https://www.conventionalcommits.org/) for automatic versioning:
+
+| Commit Type | Version Bump | Example |
+|-------------|--------------|---------|
+| `fix(chart):` | Patch | `fix(holmes): correct service port` |
+| `feat(chart):` | Minor | `feat(mdbook-htmx): add HPA support` |
+| `feat(chart)!:` | Major | `feat(holmes)!: restructure values schema` |
+
+## License
+
+Apache-2.0

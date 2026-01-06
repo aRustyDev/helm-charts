@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    "charts/olm": {
+      "release-type": "helm",
+      "package-name": "holmes",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true
+    },
+    "charts/mdbook-htmx": {
+      "release-type": "helm",
+      "package-name": "mdbook-htmx",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true
+    }
+  },
+  "separate-pull-requests": true
+}
