@@ -14,6 +14,38 @@ entries:
     version: 0.1.0
   mdbook-htmx:
   - annotations:
+      artifacthub.io/category: integration-delivery
+      artifacthub.io/license: MIT OR Apache-2.0
+      artifacthub.io/links: |
+        - name: MDBook Documentation
+          url: https://rust-lang.github.io/mdBook/
+        - name: HTMX Documentation
+          url: https://htmx.org/
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-01-06T07:45:51.814955313Z"
+    description: HTMX-enhanced documentation backend for MDBook
+    digest: a45f29b8ea08f88c7a17d747ea08f2cb2b6da449bdf06e4600fb7e4f85418210
+    home: https://github.com/aRustyDev/mdbook-htmx
+    keywords:
+    - mdbook
+    - htmx
+    - documentation
+    - static-site
+    - rust
+    maintainers:
+    - email: arustydev@proton.me
+      name: aRustyDev
+      url: https://github.com/aRustyDev
+    name: mdbook-htmx
+    sources:
+    - https://github.com/aRustyDev/mdbook-htmx
+    - https://github.com/aRustyDev/helm-charts
+    type: application
+    urls:
+    - https://github.com/aRustyDev/helm-charts/releases/download/mdbook-htmx-0.2.0/mdbook-htmx-0.2.0.tgz
+    version: 0.2.0
+  - annotations:
       artifacthub.io/category: documentation
       artifacthub.io/license: MIT OR Apache-2.0
     apiVersion: v2
@@ -38,4 +70,4 @@ entries:
     urls:
     - https://github.com/aRustyDev/helm-charts/releases/download/mdbook-htmx-0.1.0/mdbook-htmx-0.1.0.tgz
     version: 0.1.0
-generated: "2026-01-06T03:36:29.962828901Z"
+generated: "2026-01-06T07:45:51.814965281Z"
