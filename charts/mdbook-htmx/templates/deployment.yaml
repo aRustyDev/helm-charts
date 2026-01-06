@@ -55,6 +55,8 @@ spec:
               mountPath: /tmp
             - name: cache
               mountPath: /var/cache/nginx
+            - name: logs
+              mountPath: /var/log/nginx
       volumes:
         - name: content
           {{- if .Values.contentConfigMap }}
@@ -72,6 +74,8 @@ spec:
         - name: tmp
           emptyDir: {}
         - name: cache
+          emptyDir: {}
+        - name: logs
           emptyDir: {}
       {{- with .Values.nodeSelector }}
       nodeSelector:
