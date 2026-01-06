@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  packages: write
+  id-token: write
+  attestations: write
 
 jobs:
   release-please:
@@ -62,6 +65,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
       - name: Push charts to GHCR
         run: |
           for chart in charts/*/; do
@@ -73,3 +79,19 @@ jobs:
               helm push ".cr-release-packages/${chart_name}-${version}.tgz" oci://ghcr.io/${{ github.repository_owner }}/charts
             fi
           done
+
+      - name: Sign charts with Cosign
+        run: |
+          for chart in charts/*/; do
+            chart_name=$(basename "$chart")
+            if [ -f "$chart/Chart.yaml" ]; then
+              version=$(grep '^version:' "$chart/Chart.yaml" | awk '{print $2}')
+              echo "Signing $chart_name:$version..."
+              cosign sign --yes ghcr.io/${{ github.repository_owner }}/charts/${chart_name}:${version}
+            fi
+          done
+
+      - name: Generate attestations for chart packages
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: '.cr-release-packages/*.tgz'

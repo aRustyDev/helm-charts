@@ -1,0 +1,103 @@
+name: Bug Report
+description: Report a bug in a Helm chart
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: chart
+    attributes:
+      label: Chart
+      description: Which chart has the bug?
+      options:
+        - holmes
+        - mdbook-htmx
+        - Repository/CI (not a specific chart)
+    validations:
+      required: true
+
+  - type: input
+    id: chart-version
+    attributes:
+      label: Chart Version
+      description: What version of the chart are you using?
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: kubernetes-version
+    attributes:
+      label: Kubernetes Version
+      description: What Kubernetes version are you running?
+      placeholder: "1.29.0"
+    validations:
+      required: true
+
+  - type: input
+    id: helm-version
+    attributes:
+      label: Helm Version
+      description: What Helm version are you using?
+      placeholder: "3.14.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: Clear description of what the bug is
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this bug?
+      placeholder: |
+        1. Install chart with `helm install ...`
+        2. Configure values as `...`
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: values
+    attributes:
+      label: Values Used
+      description: Paste your values.yaml (redact sensitive data)
+      render: yaml
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: Paste any relevant logs or error messages
+      render: shell
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I have searched existing issues for duplicates
+          required: true
+        - label: I have tested with the latest chart version
+          required: true

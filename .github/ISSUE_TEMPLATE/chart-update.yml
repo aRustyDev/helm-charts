@@ -1,0 +1,75 @@
+name: Chart Update Request
+description: Request an update to an existing Helm chart
+title: "[Chart Update] "
+labels: ["chart-update", "enhancement"]
+body:
+  - type: dropdown
+    id: chart
+    attributes:
+      label: Chart
+      description: Which chart needs updating?
+      options:
+        - holmes
+        - mdbook-htmx
+    validations:
+      required: true
+
+  - type: input
+    id: current-version
+    attributes:
+      label: Current Chart Version
+      description: What version of the chart are you using?
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: update-type
+    attributes:
+      label: Update Type
+      description: What type of update is this?
+      options:
+        - Upstream application version bump
+        - Configuration/values change
+        - Bug fix
+        - Security patch
+        - Feature addition
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the update needed
+      placeholder: |
+        The upstream application released v2.0.0 with new features...
+    validations:
+      required: true
+
+  - type: textarea
+    id: upstream-release
+    attributes:
+      label: Upstream Release (if applicable)
+      description: Link to upstream release notes or changelog
+      placeholder: https://github.com/org/repo/releases/tag/v2.0.0
+
+  - type: textarea
+    id: breaking-changes
+    attributes:
+      label: Breaking Changes
+      description: Are there any breaking changes users should be aware of?
+      placeholder: |
+        - values.yaml schema changes
+        - Deprecated fields removed
+        - New required values
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I have checked that this update hasn't already been requested
+          required: true
+        - label: I have verified the upstream release is stable
+          required: false

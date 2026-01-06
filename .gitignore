@@ -1,0 +1,13 @@
+# Claude Code / MCP
+.claude-flow/
+.swarm/
+
+# Helm
+*.tgz
+charts/**/charts/
+
+# mdbook
+docs/book/
+
+# OS
+.DS_Store
