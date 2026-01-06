@@ -2,20 +2,26 @@
 
 **File:** `.github/workflows/release-please.yaml` (release-charts job)
 
-**Trigger:** When Release Please creates a release (`releases_created == 'true'`)
+**Trigger:** When Release Please merges a release PR (`releases_created == 'true'`)
 
 ## Overview
 
-This job runs after Release Please creates a GitHub release. It:
-1. Packages charts using chart-releaser
-2. Updates the Helm repository index
-3. Pushes OCI artifacts to GHCR
-4. Signs artifacts with Cosign
-5. Generates build attestations
+This job runs after Release Please creates a GitHub release. It publishes charts to all distribution channels with signing:
+
+1. **GitHub Releases** - Chart `.tgz` packages with `.sig` signatures
+2. **Charts Branch** - Helm repository index for GitHub/Cloudflare Pages
+3. **GHCR** - OCI artifacts signed with Cosign
+4. **Build Attestations** - SLSA provenance for all packages
 
 ## Publishing Targets
 
-### GitHub Pages (Helm Repository)
+### GitHub Releases
+
+Each chart version gets a GitHub Release with:
+- `<chart>-<version>.tgz` - The packaged chart
+- `<chart>-<version>.tgz.sig` - Cosign blob signature
+
+### Helm Repository (GitHub Pages)
 
 Charts are published to the `charts` branch and served via GitHub Pages:
 
@@ -27,7 +33,7 @@ helm install my-release arustydev/<chart>
 
 ### GHCR (OCI Registry)
 
-Charts are also pushed as OCI artifacts:
+Charts are pushed as OCI artifacts to GitHub Container Registry:
 
 ```bash
 helm pull oci://ghcr.io/arustydev/charts/<chart> --version <version>
@@ -46,12 +52,33 @@ helm repo add arustydev https://charts.arusty.dev
 
 ### Cosign Signing
 
-All OCI artifacts are signed using Sigstore keyless signing:
+**All releases are signed:**
+
+| Target | Signature Type | Verification |
+|--------|---------------|--------------|
+| GitHub Release `.tgz` | Blob signature (`.sig` file) | `cosign verify-blob` |
+| GHCR OCI artifact | Container signature | `cosign verify` |
+
+### Verify GHCR Signature
 
 ```bash
 cosign verify ghcr.io/arustydev/charts/<chart>:<version> \
   --certificate-identity-regexp="https://github.com/aRustyDev/helm-charts/.github/workflows/.*" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
+```
+
+### Verify GitHub Release Signature
+
+```bash
+# Download chart and signature
+gh release download <chart>-<version> -p "*.tgz" -p "*.sig"
+
+# Verify
+cosign verify-blob \
+  --signature <chart>-<version>.tgz.sig \
+  --certificate-identity-regexp="https://github.com/aRustyDev/helm-charts/.github/workflows/.*" \
+  --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+  <chart>-<version>.tgz
 ```
 
 ### Build Attestations
@@ -68,8 +95,16 @@ See [Chart Verification](../security/verification.md) for detailed instructions.
 
 ```yaml
 permissions:
-  contents: write      # Push to charts branch
+  contents: write      # GitHub Releases, charts branch
   packages: write      # Push to GHCR
-  id-token: write      # Sigstore OIDC
+  id-token: write      # Sigstore OIDC keyless signing
   attestations: write  # GitHub attestations
+```
+
+## Manual Republish
+
+To manually republish charts to GHCR (e.g., after fixing a signing issue):
+
+```bash
+gh workflow run publish-ghcr.yaml -f charts=all -f sign=true
 ```
