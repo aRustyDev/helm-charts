@@ -26,6 +26,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Set registry (lowercase for OCI)
+        run: |
+          echo "REGISTRY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts" >> $GITHUB_ENV
+
       - name: Set up Helm
         uses: azure/setup-helm@v4
         with:
@@ -72,7 +76,7 @@ jobs:
               helm package "$chart" -d .cr-release-packages/
 
               echo "🚀 Pushing $chart_name:$version to GHCR..."
-              helm push ".cr-release-packages/${chart_name}-${version}.tgz" oci://ghcr.io/${{ github.repository_owner }}/charts
+              helm push ".cr-release-packages/${chart_name}-${version}.tgz" oci://$REGISTRY
 
               echo "✅ Published $chart_name:$version"
             fi
@@ -101,7 +105,7 @@ jobs:
               chart_name=$(grep '^name:' "$chart/Chart.yaml" | awk '{print $2}')
               version=$(grep '^version:' "$chart/Chart.yaml" | awk '{print $2}')
               echo "🔏 Signing $chart_name:$version..."
-              cosign sign --yes ghcr.io/${{ github.repository_owner }}/charts/${chart_name}:${version}
+              cosign sign --yes $REGISTRY/${chart_name}:${version}
               echo "✅ Signed $chart_name:$version"
             fi
           done
@@ -123,4 +127,4 @@ jobs:
           done
 
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Registry: \`ghcr.io/${{ github.repository_owner }}/charts\`" >> $GITHUB_STEP_SUMMARY
+          echo "Registry: \`$REGISTRY\`" >> $GITHUB_STEP_SUMMARY
