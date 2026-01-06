@@ -32,6 +32,7 @@ jobs:
           done
 
   lint-test:
+    name: lint-test (${{ matrix.k8s-version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
