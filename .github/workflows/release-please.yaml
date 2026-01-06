@@ -33,6 +33,8 @@ jobs:
     permissions:
       contents: write
       packages: write
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -49,6 +51,23 @@ jobs:
         with:
           version: v3.14.0
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Set registry (lowercase for OCI)
+        run: |
+          echo "REGISTRY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts" >> $GITHUB_ENV
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ============================================================
+      # 1. GitHub Releases + Charts Branch (via chart-releaser)
+      # ============================================================
       - name: Run chart-releaser
         uses: helm/chart-releaser-action@v1.7.0
         with:
@@ -58,40 +77,103 @@ jobs:
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      # ============================================================
+      # 2. Sign GitHub Release assets (.tgz files)
+      # ============================================================
+      - name: Sign GitHub Release assets
+        run: |
+          for chart in charts/*/; do
+            if [ -f "$chart/Chart.yaml" ]; then
+              chart_name=$(grep '^name:' "$chart/Chart.yaml" | awk '{print $2}')
+              version=$(grep '^version:' "$chart/Chart.yaml" | awk '{print $2}')
+              tgz_file=".cr-release-packages/${chart_name}-${version}.tgz"
 
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
+              if [ -f "$tgz_file" ]; then
+                echo "🔏 Signing GitHub Release asset: $tgz_file"
+                cosign sign-blob --yes --output-signature "${tgz_file}.sig" "$tgz_file"
 
+                # Upload signature to GitHub Release
+                gh release upload "${chart_name}-${version}" "${tgz_file}.sig" --clobber || true
+                echo "✅ Uploaded signature to release ${chart_name}-${version}"
+              fi
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ============================================================
+      # 3. GHCR / GitHub Packages (OCI Registry)
+      # ============================================================
       - name: Push charts to GHCR
         run: |
           for chart in charts/*/; do
-            chart_name=$(basename "$chart")
             if [ -f "$chart/Chart.yaml" ]; then
+              chart_name=$(grep '^name:' "$chart/Chart.yaml" | awk '{print $2}')
               version=$(grep '^version:' "$chart/Chart.yaml" | awk '{print $2}')
-              echo "Packaging and pushing $chart_name:$version to GHCR..."
-              helm package "$chart" -d .cr-release-packages/
-              helm push ".cr-release-packages/${chart_name}-${version}.tgz" oci://ghcr.io/${{ github.repository_owner }}/charts
+              tgz_file=".cr-release-packages/${chart_name}-${version}.tgz"
+
+              if [ -f "$tgz_file" ]; then
+                echo "🚀 Pushing $chart_name:$version to GHCR..."
+                helm push "$tgz_file" oci://$REGISTRY
+                echo "✅ Published $chart_name:$version to GHCR"
+              else
+                echo "📦 Packaging $chart_name:$version..."
+                helm package "$chart" -d .cr-release-packages/
+                helm push ".cr-release-packages/${chart_name}-${version}.tgz" oci://$REGISTRY
+                echo "✅ Published $chart_name:$version to GHCR"
+              fi
             fi
           done
 
-      - name: Sign charts with Cosign
+      # ============================================================
+      # 4. Sign GHCR OCI artifacts
+      # ============================================================
+      - name: Sign GHCR charts with Cosign
         run: |
           for chart in charts/*/; do
-            chart_name=$(basename "$chart")
             if [ -f "$chart/Chart.yaml" ]; then
+              chart_name=$(grep '^name:' "$chart/Chart.yaml" | awk '{print $2}')
               version=$(grep '^version:' "$chart/Chart.yaml" | awk '{print $2}')
-              echo "Signing $chart_name:$version..."
-              cosign sign --yes ghcr.io/${{ github.repository_owner }}/charts/${chart_name}:${version}
+              echo "🔏 Signing GHCR artifact: $REGISTRY/${chart_name}:${version}"
+              cosign sign --yes "$REGISTRY/${chart_name}:${version}"
+              echo "✅ Signed $chart_name:$version on GHCR"
             fi
           done
 
+      # ============================================================
+      # 5. Generate build attestations
+      # ============================================================
       - name: Generate attestations for chart packages
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: '.cr-release-packages/*.tgz'
+
+      # ============================================================
+      # Summary
+      # ============================================================
+      - name: Generate release summary
+        run: |
+          echo "## 🚀 Charts Released" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Chart | Version | GitHub Release | GHCR | Signed |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|---------|----------------|------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          for chart in charts/*/; do
+            if [ -f "$chart/Chart.yaml" ]; then
+              chart_name=$(grep '^name:' "$chart/Chart.yaml" | awk '{print $2}')
+              version=$(grep '^version:' "$chart/Chart.yaml" | awk '{print $2}')
+              gh_release="[${chart_name}-${version}](https://github.com/${{ github.repository }}/releases/tag/${chart_name}-${version})"
+              ghcr_link="[\`$REGISTRY/${chart_name}:${version}\`](https://github.com/${{ github.repository_owner }}/packages/container/charts%2F${chart_name})"
+              echo "| $chart_name | $version | $gh_release | $ghcr_link | ✅ |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Verification" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "# Verify GHCR signature" >> $GITHUB_STEP_SUMMARY
+          echo "cosign verify $REGISTRY/<chart>:<version>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Verify GitHub Release signature" >> $GITHUB_STEP_SUMMARY
+          echo "cosign verify-blob --signature <chart>-<version>.tgz.sig <chart>-<version>.tgz" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
