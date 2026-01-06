@@ -6,14 +6,26 @@
 
 ## Overview
 
-This job runs after Release Please creates a GitHub release. It:
-1. Packages charts using chart-releaser
-2. Updates the Helm repository index
-3. Pushes OCI artifacts to GHCR
-4. Signs artifacts with Cosign
-5. Generates build attestations
+This job runs after Release Please creates a GitHub release. It publishes charts to multiple targets with comprehensive signing:
+
+1. **GitHub Releases + Charts Branch** - via chart-releaser
+2. **Sign GitHub Release assets** - Cosign blob signatures uploaded to releases
+3. **GHCR / GitHub Packages** - OCI artifacts pushed to container registry
+4. **Sign GHCR artifacts** - Cosign keyless signing for OCI images
+5. **Build attestations** - SLSA provenance for all packages
 
 ## Publishing Targets
+
+### GitHub Releases
+
+Each chart version gets a GitHub Release with:
+- Packaged chart (`.tgz` file)
+- Cosign signature (`.tgz.sig` file)
+
+```bash
+# Download from GitHub Release
+gh release download <chart>-<version> --repo aRustyDev/helm-charts
+```
 
 ### GitHub Pages (Helm Repository)
 
@@ -25,9 +37,9 @@ helm repo update
 helm install my-release arustydev/<chart>
 ```
 
-### GHCR (OCI Registry)
+### GHCR / GitHub Packages (OCI Registry)
 
-Charts are also pushed as OCI artifacts:
+Charts are pushed as OCI artifacts with Cosign signatures:
 
 ```bash
 helm pull oci://ghcr.io/arustydev/charts/<chart> --version <version>
@@ -46,12 +58,28 @@ helm repo add arustydev https://charts.arusty.dev
 
 ### Cosign Signing
 
-All OCI artifacts are signed using Sigstore keyless signing:
+**All artifacts are signed** using Sigstore keyless signing:
+
+#### Verify GHCR OCI Artifacts
 
 ```bash
 cosign verify ghcr.io/arustydev/charts/<chart>:<version> \
   --certificate-identity-regexp="https://github.com/aRustyDev/helm-charts/.github/workflows/.*" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
+```
+
+#### Verify GitHub Release Assets
+
+```bash
+# Download chart and signature
+gh release download <chart>-<version> --repo aRustyDev/helm-charts
+
+# Verify signature
+cosign verify-blob \
+  --signature <chart>-<version>.tgz.sig \
+  --certificate-identity-regexp="https://github.com/aRustyDev/helm-charts/.github/workflows/.*" \
+  --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+  <chart>-<version>.tgz
 ```
 
 ### Build Attestations
@@ -68,8 +96,18 @@ See [Chart Verification](../security/verification.md) for detailed instructions.
 
 ```yaml
 permissions:
-  contents: write      # Push to charts branch
+  contents: write      # Push to charts branch, create releases
   packages: write      # Push to GHCR
-  id-token: write      # Sigstore OIDC
-  attestations: write  # GitHub attestations
+  id-token: write      # Sigstore OIDC keyless signing
+  attestations: write  # GitHub build attestations
 ```
+
+## Workflow Summary
+
+After each release, the workflow generates a summary table showing:
+
+| Chart | Version | GitHub Release | GHCR | Signed |
+|-------|---------|----------------|------|--------|
+| chart-name | x.y.z | Link | Link | ✅ |
+
+This confirms all publishing targets were updated and signed.
