@@ -27,6 +27,8 @@ Uses [chart-testing](https://github.com/helm/chart-testing) to validate charts.
 
 **Matrix:** Tests against Kubernetes v1.32, v1.33, v1.34 (SHA-pinned images)
 
+**Job Names:** `lint-test (v1.32.11)`, `lint-test (v1.33.7)`, `lint-test (v1.34.3)` - used by required status checks
+
 **Steps:**
 1. **List Changed** - Detect which charts changed (unless `test_all` is true)
 2. **Lint** - Run `ct lint` which includes:
