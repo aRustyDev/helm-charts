@@ -18,9 +18,16 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Install ArtifactHub CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # Get latest version and download with correct filename
-          AH_VERSION=$(curl -s https://api.github.com/repos/artifacthub/hub/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+          # Get latest version using authenticated API to avoid rate limits
+          AH_VERSION=$(gh api repos/artifacthub/hub/releases/latest --jq '.tag_name' | sed 's/^v//')
+          if [ -z "$AH_VERSION" ] || [ "$AH_VERSION" = "null" ]; then
+            echo "Failed to get ArtifactHub version, using fallback"
+            AH_VERSION="1.21.0"
+          fi
+          echo "Installing ArtifactHub CLI v${AH_VERSION}"
           curl -sSL "https://github.com/artifacthub/hub/releases/download/v${AH_VERSION}/ah_${AH_VERSION}_linux_amd64.tar.gz" | tar xz
           sudo mv ah /usr/local/bin/
 
