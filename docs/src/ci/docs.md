@@ -27,11 +27,7 @@ Builds the mdBook documentation:
 mdbook build docs
 ```
 
-On push to `main`, uploads the built artifact for deployment.
-
-### `deploy`
-
-Deploys the built documentation to GitHub Pages (only on push to `main`).
+Uploads the built artifact for download/review (7-day retention).
 
 ## Local Development
 
