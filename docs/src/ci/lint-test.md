@@ -31,10 +31,11 @@ Uses [chart-testing](https://github.com/helm/chart-testing) to validate charts.
 1. **List Changed** - Detect which charts changed (unless `test_all` is true)
 2. **Lint** - Run `ct lint` which includes:
    - `helm lint`
-   - Chart version increment check
    - YAML validation
-   - Maintainer validation
+   - Maintainer validation (disabled)
 3. **Install Test** - Create kind cluster and install charts
+
+**Note:** Version increment checking is disabled (`check-version-increment: false`). Version bumps are handled by [release-please](./release-please.md) based on conventional commits.
 
 ## Manual Testing
 
@@ -60,11 +61,13 @@ ct install --all
 
 ## Configuration
 
-Chart-testing uses `ct.yaml` for configuration:
+Chart-testing uses `ct.yaml` for configuration (explicitly passed via `--config ct.yaml`):
 
 ```yaml
 chart-dirs:
   - charts
 target-branch: main
 helm-extra-args: --timeout 600s
+validate-maintainers: false
+check-version-increment: false  # release-please handles versioning
 ```
