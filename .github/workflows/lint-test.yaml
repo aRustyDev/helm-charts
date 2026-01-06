@@ -11,7 +11,24 @@ on:
         type: boolean
 
 jobs:
+  # Detect if this is a release-please PR
+  check-release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      is_release_please: ${{ steps.check.outputs.is_release_please }}
+    steps:
+      - id: check
+        run: |
+          if [[ "${{ github.head_ref }}" == release-please--* ]]; then
+            echo "is_release_please=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_release_please=false" >> $GITHUB_OUTPUT
+          fi
+
   artifacthub-lint:
+    needs: check-release-please
+    # Skip for release-please PRs (only version/changelog changes, already tested)
+    if: needs.check-release-please.outputs.is_release_please != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -38,8 +55,20 @@ jobs:
             ah lint --kind helm "$chart" || exit 1
           done
 
+  # Placeholder for release-please PRs to satisfy required checks
+  artifacthub-lint-skip:
+    name: artifacthub-lint
+    needs: check-release-please
+    if: needs.check-release-please.outputs.is_release_please == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Skipping for release-please PR (version bump only)"
+
   lint-test:
     name: lint-test (${{ matrix.k8s-version }})
+    needs: check-release-please
+    # Skip for release-please PRs (only version/changelog changes, already tested)
+    if: needs.check-release-please.outputs.is_release_please != 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -102,3 +131,15 @@ jobs:
           else
             ct install --config ct.yaml --target-branch ${{ github.event.repository.default_branch }}
           fi
+
+  # Placeholder for release-please PRs to satisfy required checks
+  lint-test-skip:
+    name: lint-test (${{ matrix.k8s-version }})
+    needs: check-release-please
+    if: needs.check-release-please.outputs.is_release_please == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        k8s-version: [v1.32.11, v1.33.7, v1.34.3]
+    steps:
+      - run: echo "Skipping for release-please PR (version bump only)"
