@@ -11,6 +11,24 @@ on:
         type: boolean
 
 jobs:
+  artifacthub-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install ArtifactHub CLI
+        run: |
+          curl -sL https://github.com/artifacthub/hub/releases/latest/download/ah_linux_amd64.tar.gz | tar xz
+          sudo mv ah /usr/local/bin/
+
+      - name: Lint ArtifactHub metadata
+        run: |
+          for chart in charts/*/; do
+            echo "Linting $chart..."
+            ah lint --kind helm "$chart" || exit 1
+          done
+
   lint-test:
     runs-on: ubuntu-latest
     strategy:

@@ -1,25 +1,40 @@
 apiVersion: v2
 name: holmes
-description: A Helm chart to deploy OLM in kubernetes
-icon: https://avatars.githubusercontent.com/u/38202270?s=280&v=4
-
-# A chart can be either an 'application' or a 'library' chart.
-#
-# Application charts are a collection of templates that can be packaged into versioned archives
-# to be deployed.
-#
-# Library charts provide useful utilities or functions for the chart developer. They're included as
-# a dependency of application charts to inject those utilities and functions into the rendering
-# pipeline. Library charts do not define any templates and therefore cannot be deployed.
+description: A Helm chart to deploy OLM (Operator Lifecycle Manager) in Kubernetes
 type: application
-
-# This is the chart version. This version number should be incremented each time you make changes
-# to the chart and its templates, including the app version.
-# Versions are expected to follow Semantic Versioning (https://semver.org/)
 version: 0.1.0
-
-# This is the version number of the application being deployed. This version number should be
-# incremented each time you make changes to the application. Versions are not expected to
-# follow Semantic Versioning. They should reflect the version the application is using.
-# It is recommended to use it with quotes.
 appVersion: "1.16.0"
+icon: https://avatars.githubusercontent.com/u/38202270?s=280&v=4
+keywords:
+  - olm
+  - operator
+  - operator-lifecycle-manager
+  - operators
+  - kubernetes
+home: https://github.com/aRustyDev/helm-charts
+sources:
+  - https://github.com/aRustyDev/helm-charts
+  - https://github.com/operator-framework/operator-lifecycle-manager
+maintainers:
+  - name: aRustyDev
+    email: arustydev@proton.me
+    url: https://github.com/aRustyDev
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/category: integration-delivery
+  artifacthub.io/links: |
+    - name: OLM Documentation
+      url: https://olm.operatorframework.io/
+    - name: OperatorHub
+      url: https://operatorhub.io/
+  artifacthub.io/operator: "true"
+  artifacthub.io/crds: |
+    - kind: CatalogSource
+      version: v1alpha1
+      name: catalogsources.operators.coreos.com
+    - kind: ClusterServiceVersion
+      version: v1alpha1
+      name: clusterserviceversions.operators.coreos.com
+    - kind: Subscription
+      version: v1alpha1
+      name: subscriptions.operators.coreos.com

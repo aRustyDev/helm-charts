@@ -1,0 +1,6 @@
+# Artifact Hub repository metadata
+# https://artifacthub.io/docs/topics/repositories/
+repositoryID: # Will be assigned by ArtifactHub
+owners:
+  - name: aRustyDev
+    email: arustydev@proton.me

@@ -9,9 +9,11 @@ keywords:
   - htmx
   - documentation
   - static-site
+  - rust
 home: https://github.com/aRustyDev/mdbook-htmx
 sources:
   - https://github.com/aRustyDev/mdbook-htmx
+  - https://github.com/aRustyDev/helm-charts
 maintainers:
   - name: aRustyDev
     email: arustydev@proton.me
@@ -19,3 +21,8 @@ maintainers:
 annotations:
   artifacthub.io/license: MIT OR Apache-2.0
   artifacthub.io/category: documentation
+  artifacthub.io/links: |
+    - name: MDBook Documentation
+      url: https://rust-lang.github.io/mdBook/
+    - name: HTMX Documentation
+      url: https://htmx.org/
