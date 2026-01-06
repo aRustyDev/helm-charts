@@ -46,9 +46,10 @@ jobs:
         if: inputs.sign
         uses: sigstore/cosign-installer@v3
 
-      - name: Publish charts to GHCR
+      - name: Publish and sign charts to GHCR
         run: |
           CHARTS_INPUT="${{ inputs.charts }}"
+          SIGN="${{ inputs.sign }}"
 
           if [ "$CHARTS_INPUT" = "all" ]; then
             CHART_DIRS=$(find charts -maxdepth 1 -mindepth 1 -type d)
@@ -76,37 +77,19 @@ jobs:
               helm package "$chart" -d .cr-release-packages/
 
               echo "🚀 Pushing $chart_name:$version to GHCR..."
-              helm push ".cr-release-packages/${chart_name}-${version}.tgz" oci://$REGISTRY
+              push_output=$(helm push ".cr-release-packages/${chart_name}-${version}.tgz" oci://$REGISTRY 2>&1)
+              echo "$push_output"
 
-              echo "✅ Published $chart_name:$version"
-            fi
-          done
+              # Extract digest from helm push output (format: "Digest: sha256:...")
+              digest=$(echo "$push_output" | grep -oP 'Digest: \Ksha256:[a-f0-9]+')
+              echo "✅ Published $chart_name:$version (digest: $digest)"
 
-      - name: Sign charts with Cosign
-        if: inputs.sign
-        run: |
-          CHARTS_INPUT="${{ inputs.charts }}"
-
-          if [ "$CHARTS_INPUT" = "all" ]; then
-            CHART_DIRS=$(find charts -maxdepth 1 -mindepth 1 -type d)
-          else
-            CHART_DIRS=""
-            IFS=',' read -ra CHART_NAMES <<< "$CHARTS_INPUT"
-            for name in "${CHART_NAMES[@]}"; do
-              name=$(echo "$name" | xargs)
-              if [ -d "charts/$name" ]; then
-                CHART_DIRS="$CHART_DIRS charts/$name"
+              # Sign by digest (not tag) for security
+              if [ "$SIGN" = "true" ] && [ -n "$digest" ]; then
+                echo "🔏 Signing $REGISTRY/${chart_name}@${digest}..."
+                cosign sign --yes "$REGISTRY/${chart_name}@${digest}"
+                echo "✅ Signed $chart_name:$version"
               fi
-            done
-          fi
-
-          for chart in $CHART_DIRS; do
-            if [ -f "$chart/Chart.yaml" ]; then
-              chart_name=$(grep '^name:' "$chart/Chart.yaml" | awk '{print $2}')
-              version=$(grep '^version:' "$chart/Chart.yaml" | awk '{print $2}')
-              echo "🔏 Signing $chart_name:$version..."
-              cosign sign --yes $REGISTRY/${chart_name}:${version}
-              echo "✅ Signed $chart_name:$version"
             fi
           done
 
