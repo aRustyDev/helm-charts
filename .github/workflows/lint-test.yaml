@@ -19,7 +19,7 @@ jobs:
 
       - name: Install ArtifactHub CLI
         run: |
-          curl -sL https://github.com/artifacthub/hub/releases/latest/download/ah_linux_amd64.tar.gz | tar xz
+          curl -sSL https://github.com/artifacthub/hub/releases/latest/download/ah_linux_amd64.tar.gz | tar xz
           sudo mv ah /usr/local/bin/
 
       - name: Lint ArtifactHub metadata
