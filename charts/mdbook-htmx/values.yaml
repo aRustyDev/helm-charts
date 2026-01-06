@@ -1,0 +1,177 @@
+# Default values for mdbook-htmx
+# See README.md for documentation
+
+# Number of replicas
+replicaCount: 1
+
+# Container image
+image:
+  repository: nginx
+  tag: alpine
+  pullPolicy: IfNotPresent
+
+# Image pull secrets
+imagePullSecrets: []
+
+# Override chart name
+nameOverride: ""
+fullnameOverride: ""
+
+# Service account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 101
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 101
+  capabilities:
+    drop:
+      - ALL
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 80
+
+# Ingress configuration
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # nginx.ingress.kubernetes.io/rewrite-target: /
+  hosts:
+    - host: docs.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+    # - secretName: docs-tls
+    #   hosts:
+    #     - docs.example.com
+
+# Resource limits
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+# Liveness probe
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# Readiness probe
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# ============================================================================
+# HTMX Configuration (Phase 2+)
+# ============================================================================
+htmx:
+  # Enable HTMX fragment routing
+  enabled: true
+  # Fragment routing configuration
+  fragmentRouting: true
+
+# ============================================================================
+# Authentication Configuration (Phase 3+)
+# ============================================================================
+auth:
+  enabled: false
+  # OAuth2 Proxy sidecar
+  oauth2Proxy:
+    enabled: false
+    image:
+      repository: quay.io/oauth2-proxy/oauth2-proxy
+      tag: latest
+    # Provider configuration
+    provider: github
+    # Cookie settings
+    cookieName: _oauth2_proxy
+    # Secret name containing OAuth2 credentials
+    secretName: oauth2-proxy-secret
+
+# ============================================================================
+# Search Configuration (Phase 4+)
+# ============================================================================
+search:
+  enabled: false
+  # Meilisearch deployment
+  meilisearch:
+    enabled: false
+    image:
+      repository: getmeili/meilisearch
+      tag: latest
+    persistence:
+      enabled: true
+      size: 1Gi
+      storageClass: ""
+    # Secret name containing MEILI_MASTER_KEY
+    secretName: meilisearch-secret
+
+# ============================================================================
+# Advanced Configuration (Phase 5+)
+# ============================================================================
+
+# Horizontal Pod Autoscaler
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# Prometheus metrics
+metrics:
+  enabled: false
+  serviceMonitor:
+    enabled: false
+    namespace: ""
+    interval: 30s
+
+# ConfigMap containing book content
+# If not specified, an emptyDir is used (for init containers to populate)
+contentConfigMap: ""
+
+# PVC for persistent book content
+contentPersistence:
+  enabled: false
+  size: 1Gi
+  storageClass: ""
+  accessMode: ReadOnlyMany

@@ -1,0 +1,166 @@
+{{- if and .Values.search.enabled .Values.search.meilisearch.enabled }}
+---
+# Meilisearch StatefulSet for Phase 4 search functionality
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mdbook-htmx.fullname" . }}-meilisearch
+  labels:
+    {{- include "mdbook-htmx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: search
+spec:
+  serviceName: {{ include "mdbook-htmx.fullname" . }}-meilisearch
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "mdbook-htmx.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: search
+  template:
+    metadata:
+      labels:
+        {{- include "mdbook-htmx.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: search
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: meilisearch
+          image: "{{ .Values.search.meilisearch.image.repository }}:{{ .Values.search.meilisearch.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 7700
+              protocol: TCP
+          env:
+            - name: MEILI_ENV
+              value: production
+            - name: MEILI_NO_ANALYTICS
+              value: "true"
+            - name: MEILI_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.search.meilisearch.secretName }}
+                  key: MEILI_MASTER_KEY
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 1000
+          volumeMounts:
+            - name: data
+              mountPath: /meili_data
+  {{- if .Values.search.meilisearch.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if .Values.search.meilisearch.persistence.storageClass }}
+        storageClassName: {{ .Values.search.meilisearch.persistence.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.search.meilisearch.persistence.size }}
+  {{- else }}
+      volumes:
+        - name: data
+          emptyDir: {}
+  {{- end }}
+---
+# Meilisearch Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mdbook-htmx.fullname" . }}-meilisearch
+  labels:
+    {{- include "mdbook-htmx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: search
+spec:
+  type: ClusterIP
+  ports:
+    - port: 7700
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "mdbook-htmx.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: search
+---
+# Search index init Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "mdbook-htmx.fullname" . }}-search-init
+  labels:
+    {{- include "mdbook-htmx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: search-init
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: indexer
+          image: curlimages/curl:latest
+          env:
+            - name: MEILI_URL
+              value: "http://{{ include "mdbook-htmx.fullname" . }}-meilisearch:7700"
+            - name: MEILI_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.search.meilisearch.secretName }}
+                  key: MEILI_MASTER_KEY
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for Meilisearch..."
+              until curl -s "$MEILI_URL/health" | grep -q "available"; do
+                sleep 2
+              done
+              echo "Creating docs index..."
+              curl -X POST "$MEILI_URL/indexes" \
+                -H "Authorization: Bearer $MEILI_MASTER_KEY" \
+                -H "Content-Type: application/json" \
+                -d '{"uid":"docs","primaryKey":"path"}' || true
+              echo "Search index initialized"
+          volumeMounts:
+            - name: content
+              mountPath: /data
+              readOnly: true
+      volumes:
+        - name: content
+          {{- if .Values.contentConfigMap }}
+          configMap:
+            name: {{ .Values.contentConfigMap }}
+          {{- else if .Values.contentPersistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "mdbook-htmx.fullname" . }}-content
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+{{- end }}

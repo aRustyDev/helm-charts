@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mdbook-htmx.fullname" . }}-nginx
+  labels:
+    {{- include "mdbook-htmx.labels" . | nindent 4 }}
+data:
+  nginx.conf: |
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /tmp/nginx.pid;
+
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+
+        log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                        '$status $body_bytes_sent "$http_referer" '
+                        '"$http_user_agent" "$http_x_forwarded_for" '
+                        'hx_request=$http_hx_request';
+
+        access_log /var/log/nginx/access.log main;
+
+        sendfile on;
+        tcp_nopush on;
+        keepalive_timeout 65;
+
+        gzip on;
+        gzip_vary on;
+        gzip_types text/plain text/css application/json application/javascript
+                   text/xml application/xml application/xml+rss text/javascript;
+
+        # Use temp paths in /tmp for rootless operation
+        client_body_temp_path /tmp/client_temp;
+        proxy_temp_path /tmp/proxy_temp;
+        fastcgi_temp_path /tmp/fastcgi_temp;
+        uwsgi_temp_path /tmp/uwsgi_temp;
+        scgi_temp_path /tmp/scgi_temp;
+
+        server {
+            listen 80;
+            server_name _;
+            root /usr/share/nginx/html;
+            index index.html;
+
+            # Security headers
+            add_header X-Frame-Options "SAMEORIGIN" always;
+            add_header X-Content-Type-Options "nosniff" always;
+
+            {{- if .Values.htmx.enabled }}
+            # HTMX fragment routing
+            set $htmx_request 0;
+            if ($http_hx_request = "true") {
+                set $htmx_request 1;
+            }
+            {{- end }}
+
+            location / {
+                try_files $uri $uri/ /pages$uri /pages$uri.html /index.html;
+                add_header Vary "HX-Request" always;
+            }
+
+            {{- if .Values.htmx.fragmentRouting }}
+            location /fragments/ {
+                alias /usr/share/nginx/html/fragments/;
+                try_files $uri $uri.html =404;
+                add_header Vary "HX-Request" always;
+                add_header Cache-Control "private, max-age=0" always;
+            }
+            {{- end }}
+
+            location /assets/ {
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+            }
+
+            {{- if and .Values.search.enabled .Values.search.meilisearch.enabled }}
+            # Phase 4: Search proxy to Meilisearch
+            location /search {
+                proxy_pass http://{{ include "mdbook-htmx.fullname" . }}-meilisearch:7700/indexes/docs/search;
+                proxy_http_version 1.1;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header Authorization "Bearer ${MEILI_API_KEY}";
+                add_header Vary "HX-Request" always;
+                add_header Cache-Control "private, max-age=60";
+            }
+            {{- end }}
+
+            location /health {
+                access_log off;
+                return 200 "healthy\n";
+                add_header Content-Type text/plain;
+            }
+
+            error_page 404 /404.html;
+            error_page 500 502 503 504 /50x.html;
+        }
+    }
