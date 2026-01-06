@@ -1,6 +1,6 @@
 # aRustyDev Helm Charts
 
-Helm charts repository with dual distribution endpoints.
+Helm charts repository with multiple distribution endpoints.
 
 ## Available Charts
 
@@ -14,9 +14,7 @@ Helm charts repository with dual distribution endpoints.
 [Helm](https://helm.sh) must be installed to use the charts. Please refer to
 Helm's [documentation](https://helm.sh/docs) to get started.
 
-### Add Repository
-
-Choose either endpoint (both serve identical content):
+### Option 1: Helm Repository (Traditional)
 
 ```bash
 # GitHub Pages (primary)
@@ -24,28 +22,31 @@ helm repo add arustydev https://arustydev.github.io/helm-charts
 
 # Cloudflare Pages (mirror)
 helm repo add arustydev https://charts.arusty.dev
-```
 
-### Update Repository
-
-```bash
+# Update and search
 helm repo update
+helm search repo arustydev
 ```
 
-### Search Charts
+### Option 2: OCI Registry (Modern)
+
+No `helm repo add` required - reference charts directly:
 
 ```bash
-helm search repo arustydev
+# Install from GitHub Container Registry
+helm install my-olm oci://ghcr.io/arustydev/charts/holmes --version 0.1.0
+helm install my-docs oci://ghcr.io/arustydev/charts/mdbook-htmx --version 0.1.0
 ```
 
 ### Install a Chart
 
 ```bash
-# Install holmes (OLM)
+# From Helm repository
 helm install my-olm arustydev/holmes
-
-# Install mdbook-htmx
 helm install my-docs arustydev/mdbook-htmx
+
+# From OCI registry
+helm install my-olm oci://ghcr.io/arustydev/charts/holmes
 ```
 
 ### Uninstall a Chart
@@ -54,6 +55,20 @@ helm install my-docs arustydev/mdbook-htmx
 helm delete my-olm
 helm delete my-docs
 ```
+
+## Distribution Endpoints
+
+| Endpoint | URL | Type |
+|----------|-----|------|
+| GitHub Pages | `https://arustydev.github.io/helm-charts` | Helm repo |
+| Cloudflare Pages | `https://charts.arusty.dev` | Helm repo |
+| GitHub Container Registry | `oci://ghcr.io/arustydev/charts` | OCI registry |
+
+## Documentation
+
+See [docs/](./docs/) for:
+- [Architecture Decision Records](./docs/src/adr/)
+- [Chart Usage Guides](./docs/src/charts/)
 
 ## Contributing
 

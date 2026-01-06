@@ -1,0 +1,15 @@
+[book]
+title = "aRustyDev Helm Charts"
+authors = ["aRustyDev"]
+description = "Documentation for aRustyDev Helm Charts"
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/aRustyDev/helm-charts"
+edit-url-template = "https://github.com/aRustyDev/helm-charts/edit/main/docs/{path}"

@@ -17,5 +17,5 @@ jobs:
         run: |
           gh api repos/${{ github.repository }}/pages \
             -X PUT \
-            -f source='{"branch":"gh-pages","path":"/"}' \
+            -f source='{"branch":"charts","path":"/"}' \
             --silent || echo "Pages already configured or error occurred"
