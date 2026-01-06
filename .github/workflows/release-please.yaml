@@ -102,9 +102,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ============================================================
-      # 3. GHCR / GitHub Packages (OCI Registry)
+      # 3. GHCR / GitHub Packages (OCI Registry) + Sign by Digest
       # ============================================================
-      - name: Push charts to GHCR
+      - name: Push and sign charts to GHCR
         run: |
           for chart in charts/*/; do
             if [ -f "$chart/Chart.yaml" ]; then
@@ -112,36 +112,34 @@ jobs:
               version=$(grep '^version:' "$chart/Chart.yaml" | awk '{print $2}')
               tgz_file=".cr-release-packages/${chart_name}-${version}.tgz"
 
-              if [ -f "$tgz_file" ]; then
-                echo "🚀 Pushing $chart_name:$version to GHCR..."
-                helm push "$tgz_file" oci://$REGISTRY
-                echo "✅ Published $chart_name:$version to GHCR"
-              else
+              # Package if needed
+              if [ ! -f "$tgz_file" ]; then
                 echo "📦 Packaging $chart_name:$version..."
                 helm package "$chart" -d .cr-release-packages/
-                helm push ".cr-release-packages/${chart_name}-${version}.tgz" oci://$REGISTRY
-                echo "✅ Published $chart_name:$version to GHCR"
+              fi
+
+              # Push and capture digest
+              echo "🚀 Pushing $chart_name:$version to GHCR..."
+              push_output=$(helm push "$tgz_file" oci://$REGISTRY 2>&1)
+              echo "$push_output"
+
+              # Extract digest from helm push output (format: "Digest: sha256:...")
+              digest=$(echo "$push_output" | grep -oP 'Digest: \Ksha256:[a-f0-9]+')
+              echo "✅ Published $chart_name:$version (digest: $digest)"
+
+              # Sign by digest (not tag) for security
+              if [ -n "$digest" ]; then
+                echo "🔏 Signing $REGISTRY/${chart_name}@${digest}..."
+                cosign sign --yes "$REGISTRY/${chart_name}@${digest}"
+                echo "✅ Signed $chart_name:$version on GHCR"
+              else
+                echo "⚠️ Could not extract digest, skipping signing for $chart_name:$version"
               fi
             fi
           done
 
       # ============================================================
-      # 4. Sign GHCR OCI artifacts
-      # ============================================================
-      - name: Sign GHCR charts with Cosign
-        run: |
-          for chart in charts/*/; do
-            if [ -f "$chart/Chart.yaml" ]; then
-              chart_name=$(grep '^name:' "$chart/Chart.yaml" | awk '{print $2}')
-              version=$(grep '^version:' "$chart/Chart.yaml" | awk '{print $2}')
-              echo "🔏 Signing GHCR artifact: $REGISTRY/${chart_name}:${version}"
-              cosign sign --yes "$REGISTRY/${chart_name}:${version}"
-              echo "✅ Signed $chart_name:$version on GHCR"
-            fi
-          done
-
-      # ============================================================
-      # 5. Generate build attestations
+      # 4. Generate build attestations
       # ============================================================
       - name: Generate attestations for chart packages
         uses: actions/attest-build-provenance@v2
