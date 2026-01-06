@@ -25,7 +25,7 @@ Checks:
 
 Uses [chart-testing](https://github.com/helm/chart-testing) to validate charts.
 
-**Matrix:** Tests against Kubernetes v1.28, v1.29, v1.30
+**Matrix:** Tests against Kubernetes v1.32, v1.33, v1.34 (SHA-pinned images)
 
 **Steps:**
 1. **List Changed** - Detect which charts changed (unless `test_all` is true)

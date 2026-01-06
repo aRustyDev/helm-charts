@@ -35,7 +35,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        k8s-version: [v1.28.15, v1.29.12, v1.30.8]
+        # SHA-pinned images from https://github.com/kubernetes-sigs/kind/releases
+        include:
+          - k8s-version: v1.32.11
+            node-image: kindest/node:v1.32.11@sha256:5fc52d52a7b9574015299724bd68f183702956aa4a2116ae75a63cb574b35af8
+          - k8s-version: v1.33.7
+            node-image: kindest/node:v1.33.7@sha256:d26ef333bdb2cbe9862a0f7c3803ecc7b4303d8cea8e814b481b09949d353040
+          - k8s-version: v1.34.3
+            node-image: kindest/node:v1.34.3@sha256:08497ee19eace7b4b5348db5c6a1591d7752b164530a36f855cb0f2bdcbadd48
       fail-fast: false
     steps:
       - name: Checkout
@@ -77,7 +84,7 @@ jobs:
         if: steps.list-changed.outputs.changed == 'true' || github.event.inputs.test_all == 'true'
         uses: helm/kind-action@v1.13.0
         with:
-          node_image: kindest/node:${{ matrix.k8s-version }}
+          node_image: ${{ matrix.node-image }}
 
       - name: Run chart-testing (install)
         if: steps.list-changed.outputs.changed == 'true' || github.event.inputs.test_all == 'true'
