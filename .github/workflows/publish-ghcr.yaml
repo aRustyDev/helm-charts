@@ -11,7 +11,7 @@ on:
       sign:
         description: 'Sign with Cosign'
         required: false
-        default: 'true'
+        default: true
         type: boolean
 
 permissions:
@@ -43,7 +43,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Cosign
-        if: inputs.sign == 'true'
+        if: inputs.sign
         uses: sigstore/cosign-installer@v3
 
       - name: Publish charts to GHCR
@@ -83,7 +83,7 @@ jobs:
           done
 
       - name: Sign charts with Cosign
-        if: inputs.sign == 'true'
+        if: inputs.sign
         run: |
           CHARTS_INPUT="${{ inputs.charts }}"
 
