@@ -16,7 +16,7 @@ data:
 
     ingress: {{ toYaml .Values.ingress | nindent 6 }}
 
-    metrics: 0.0.0.0:2000
+    metrics: 0.0.0.0:{{ .Values.metrics.port | default 2000 }}
     metrics-update-freq: {{ .Values.tunnelConfig.metricsUpdateFrequency }}
 
     autoupdate-freq: {{ .Values.tunnelConfig.autoUpdateFrequency }}

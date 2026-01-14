@@ -164,3 +164,58 @@ tolerations:
 
 # -- For more information checkout: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity
 affinity: {}
+
+# -- Prometheus metrics configuration. Cloudflared exposes metrics on port 2000 by default.
+metrics:
+  # -- Enable metrics endpoint
+  enabled: true
+  # -- Metrics port (cloudflared default is 2000)
+  port: 2000
+  # -- Metrics path
+  path: "/metrics"
+  # -- Metrics service configuration
+  service:
+    # -- Enable metrics service for scraping
+    enabled: true
+    # -- Service type
+    type: ClusterIP
+    # -- Additional service labels
+    labels: {}
+    # -- Additional service annotations (e.g., prometheus.io/scrape)
+    annotations: {}
+  # -- ServiceMonitor configuration for Prometheus Operator (use with Deployment mode)
+  serviceMonitor:
+    # -- Enable ServiceMonitor creation
+    enabled: false
+    # -- Namespace to create ServiceMonitor in (defaults to release namespace)
+    namespace: ""
+    # -- Scrape interval
+    interval: "30s"
+    # -- Scrape timeout
+    scrapeTimeout: "10s"
+    # -- Additional labels for ServiceMonitor
+    labels: {}
+    # -- Honor labels from the scraped target
+    honorLabels: false
+    # -- Metric relabeling configs
+    metricRelabelings: []
+    # -- Relabeling configs
+    relabelings: []
+  # -- PodMonitor configuration for Prometheus Operator (use with DaemonSet mode)
+  podMonitor:
+    # -- Enable PodMonitor creation
+    enabled: false
+    # -- Namespace to create PodMonitor in (defaults to release namespace)
+    namespace: ""
+    # -- Scrape interval
+    interval: "30s"
+    # -- Scrape timeout
+    scrapeTimeout: "10s"
+    # -- Additional labels for PodMonitor
+    labels: {}
+    # -- Honor labels from the scraped target
+    honorLabels: false
+    # -- Metric relabeling configs
+    metricRelabelings: []
+    # -- Relabeling configs
+    relabelings: []

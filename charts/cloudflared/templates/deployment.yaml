@@ -50,8 +50,8 @@ spec:
             - run
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
-            - name: active-con-stat
-              containerPort: 2000
+            - name: metrics
+              containerPort: {{ .Values.metrics.port | default 2000 }}
               protocol: TCP
           env:
             - name: TUNNEL_ORIGIN_CERT
@@ -59,7 +59,7 @@ spec:
           livenessProbe:
             httpGet:
               path: /ready
-              port: 2000
+              port: {{ .Values.metrics.port | default 2000 }}
             failureThreshold: 1
             initialDelaySeconds: 10
             periodSeconds: 10
