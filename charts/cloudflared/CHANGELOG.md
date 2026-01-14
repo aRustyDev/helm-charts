@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.0](https://github.com/aRustyDev/helm-charts/compare/cloudflared-v0.3.0...cloudflared-v0.4.0) (2026-01-14)
+
+
+### Features
+
+* **cloudflared:** add base cloudflared helm chart (MVP) ([#35](https://github.com/aRustyDev/helm-charts/issues/35)) ([136686b](https://github.com/aRustyDev/helm-charts/commit/136686b17c5b1439d71dbb604884ef94f0a42240))
+* **cloudflared:** add External Secrets Operator integration ([#37](https://github.com/aRustyDev/helm-charts/issues/37)) ([ad17042](https://github.com/aRustyDev/helm-charts/commit/ad170427bf438a719de81acb8822f3970f055304))
+* **cloudflared:** add Linkerd service mesh integration ([#43](https://github.com/aRustyDev/helm-charts/issues/43)) ([47ba9dd](https://github.com/aRustyDev/helm-charts/commit/47ba9ddda9f1a9037db88277ffec6bc03aa48ded))
+* **cloudflared:** add Prometheus metrics support ([#41](https://github.com/aRustyDev/helm-charts/issues/41)) ([44432d0](https://github.com/aRustyDev/helm-charts/commit/44432d0d036942282f7f4209f25f1766e11b95cc))
+
 ## [0.3.0](https://github.com/aRustyDev/helm-charts/compare/cloudflared-v0.2.0...cloudflared-v0.3.0) (2026-01-14)
 
 
