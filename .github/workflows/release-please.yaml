@@ -20,9 +20,8 @@ permissions:
   attestations: write
 
 jobs:
-  # Single release-please job using GITHUB_TOKEN
-  # Note: PRs created with GITHUB_TOKEN won't trigger CI workflows (known limitation)
-  # See: https://github.com/aRustyDev/helm-charts/issues/39
+  # Release-please using GitHub App token for both PRs and releases
+  # App token is required because GITHUB_TOKEN gets "Resource not accessible by integration" error
   # See: https://github.com/aRustyDev/helm-charts/issues/42
   release-please:
     runs-on: ubuntu-latest
@@ -30,10 +29,27 @@ jobs:
       releases_created: ${{ steps.release.outputs.releases_created }}
       paths_released: ${{ steps.release.outputs.paths_released }}
     steps:
+      - name: Load secrets from 1Password
+        id: op-secrets
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: false
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          X_REPO_AUTH_APP_ID: op://gh-shared/xauth/app/id
+          X_REPO_AUTH_PRIVATE_KEY: op://gh-shared/xauth/app/private-key.pem
+
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
+          private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
+
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
