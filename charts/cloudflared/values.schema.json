@@ -9,6 +9,220 @@
       "title": "affinity",
       "type": "object"
     },
+    "metrics": {
+      "additionalProperties": false,
+      "description": "Prometheus metrics configuration. Cloudflared exposes metrics on port 2000 by default.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "Enable metrics endpoint",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "port": {
+          "default": 2000,
+          "description": "Metrics port (cloudflared default is 2000)",
+          "required": [],
+          "title": "port",
+          "type": "integer"
+        },
+        "path": {
+          "default": "/metrics",
+          "description": "Metrics path",
+          "required": [],
+          "title": "path",
+          "type": "string"
+        },
+        "service": {
+          "additionalProperties": false,
+          "description": "Metrics service configuration",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Enable metrics service for scraping",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "type": {
+              "default": "ClusterIP",
+              "description": "Service type",
+              "required": [],
+              "title": "type",
+              "type": "string",
+              "enum": ["ClusterIP", "NodePort", "LoadBalancer"]
+            },
+            "labels": {
+              "additionalProperties": true,
+              "description": "Additional service labels",
+              "required": [],
+              "title": "labels",
+              "type": "object"
+            },
+            "annotations": {
+              "additionalProperties": true,
+              "description": "Additional service annotations (e.g., prometheus.io/scrape)",
+              "required": [],
+              "title": "annotations",
+              "type": "object"
+            }
+          },
+          "required": ["enabled"],
+          "title": "service",
+          "type": "object"
+        },
+        "serviceMonitor": {
+          "additionalProperties": false,
+          "description": "ServiceMonitor configuration for Prometheus Operator (use with Deployment mode)",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Enable ServiceMonitor creation",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "namespace": {
+              "default": "",
+              "description": "Namespace to create ServiceMonitor in (defaults to release namespace)",
+              "required": [],
+              "title": "namespace",
+              "type": "string"
+            },
+            "interval": {
+              "default": "30s",
+              "description": "Scrape interval",
+              "required": [],
+              "title": "interval",
+              "type": "string"
+            },
+            "scrapeTimeout": {
+              "default": "10s",
+              "description": "Scrape timeout",
+              "required": [],
+              "title": "scrapeTimeout",
+              "type": "string"
+            },
+            "labels": {
+              "additionalProperties": true,
+              "description": "Additional labels for ServiceMonitor",
+              "required": [],
+              "title": "labels",
+              "type": "object"
+            },
+            "honorLabels": {
+              "default": false,
+              "description": "Honor labels from the scraped target",
+              "required": [],
+              "title": "honorLabels",
+              "type": "boolean"
+            },
+            "metricRelabelings": {
+              "description": "Metric relabeling configs",
+              "items": {
+                "additionalProperties": true,
+                "required": [],
+                "type": "object"
+              },
+              "required": [],
+              "title": "metricRelabelings",
+              "type": "array"
+            },
+            "relabelings": {
+              "description": "Relabeling configs",
+              "items": {
+                "additionalProperties": true,
+                "required": [],
+                "type": "object"
+              },
+              "required": [],
+              "title": "relabelings",
+              "type": "array"
+            }
+          },
+          "required": ["enabled"],
+          "title": "serviceMonitor",
+          "type": "object"
+        },
+        "podMonitor": {
+          "additionalProperties": false,
+          "description": "PodMonitor configuration for Prometheus Operator (use with DaemonSet mode)",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Enable PodMonitor creation",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "namespace": {
+              "default": "",
+              "description": "Namespace to create PodMonitor in (defaults to release namespace)",
+              "required": [],
+              "title": "namespace",
+              "type": "string"
+            },
+            "interval": {
+              "default": "30s",
+              "description": "Scrape interval",
+              "required": [],
+              "title": "interval",
+              "type": "string"
+            },
+            "scrapeTimeout": {
+              "default": "10s",
+              "description": "Scrape timeout",
+              "required": [],
+              "title": "scrapeTimeout",
+              "type": "string"
+            },
+            "labels": {
+              "additionalProperties": true,
+              "description": "Additional labels for PodMonitor",
+              "required": [],
+              "title": "labels",
+              "type": "object"
+            },
+            "honorLabels": {
+              "default": false,
+              "description": "Honor labels from the scraped target",
+              "required": [],
+              "title": "honorLabels",
+              "type": "boolean"
+            },
+            "metricRelabelings": {
+              "description": "Metric relabeling configs",
+              "items": {
+                "additionalProperties": true,
+                "required": [],
+                "type": "object"
+              },
+              "required": [],
+              "title": "metricRelabelings",
+              "type": "array"
+            },
+            "relabelings": {
+              "description": "Relabeling configs",
+              "items": {
+                "additionalProperties": true,
+                "required": [],
+                "type": "object"
+              },
+              "required": [],
+              "title": "relabelings",
+              "type": "array"
+            }
+          },
+          "required": ["enabled"],
+          "title": "podMonitor",
+          "type": "object"
+        }
+      },
+      "required": ["enabled"],
+      "title": "metrics",
+      "type": "object"
+    },
     "fullnameOverride": {
       "default": "",
       "required": [],
@@ -811,7 +1025,8 @@
     "resources",
     "nodeSelector",
     "tolerations",
-    "affinity"
+    "affinity",
+    "metrics"
   ],
   "type": "object"
 }

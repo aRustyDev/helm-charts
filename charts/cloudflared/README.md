@@ -122,6 +122,51 @@ tunnelConfig:
 
 The chart will create an `ExternalSecret` resource that syncs your credentials from the external store to a Kubernetes Secret, which is then mounted by the cloudflared deployment.
 
+### Prometheus Metrics
+
+Cloudflared exposes Prometheus metrics on port 2000 by default. This chart provides several options for scraping these metrics.
+
+#### Using Prometheus Operator (Recommended)
+
+If you have Prometheus Operator installed, you can enable ServiceMonitor or PodMonitor resources:
+
+**For Deployment mode** (when `replica.allNodes: false`):
+```yaml
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: "30s"
+    labels:
+      release: prometheus  # Match your Prometheus selector
+```
+
+**For DaemonSet mode** (when `replica.allNodes: true`):
+```yaml
+metrics:
+  enabled: true
+  podMonitor:
+    enabled: true
+    interval: "30s"
+    labels:
+      release: prometheus  # Match your Prometheus selector
+```
+
+#### Using Service Annotations
+
+For Prometheus setups using annotation-based service discovery:
+
+```yaml
+metrics:
+  enabled: true
+  service:
+    enabled: true
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "2000"
+      prometheus.io/path: "/metrics"
+```
+
 ### Configuring Ingress
 
 The default ingress configuration is shown below. Replace the placeholder values with your domain and server settings. It is recommended to use a separate `values.yaml` file to manage this configuration.
