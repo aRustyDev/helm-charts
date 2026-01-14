@@ -28,11 +28,13 @@ Add the base cloudflared Helm chart with minimal modifications from the upstream
 - [ ] `helm lint charts/cloudflared` passes
 - [ ] `helm template charts/cloudflared` renders correctly
 - [ ] CI pipeline passes (chart-testing lint)
+- [ ] CI pipeline passes (chart-testing install with ci/test-values.yaml)
 
 ## Notes
 - Remove Chart.lock since there are no dependencies
 - Update version from upstream 2.2.4 to 0.1.0 for fresh start
 - Keep all original upstream functionality intact
+- Charts with required values need ci/test-values.yaml for install tests
 
 ## SKILL Documentation Updates
 After completing this PR, update the Helm chart development SKILL docs at:
@@ -42,5 +44,6 @@ Document:
 - [ ] Chart.lock handling when no dependencies exist
 - [ ] Release-please configuration patterns for Helm charts
 - [ ] CI lint requirements (yamllint rules, chart-testing)
+- [ ] CI install testing with ci/test-values.yaml for charts with required values
 - [ ] Best practice: Start with upstream chart, minimal modifications
 - [ ] Anti-pattern: Including stale Chart.lock files
