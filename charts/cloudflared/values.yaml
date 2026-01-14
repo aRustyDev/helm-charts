@@ -70,6 +70,32 @@ securityContext:
   runAsUser: 65532
   runAsGroup: 65532
 
+# -- External Secrets Operator integration for managing tunnel credentials from external secret stores.
+# For more information checkout: https://external-secrets.io/
+externalSecrets:
+  # -- Enable External Secrets Operator integration. Mutually exclusive with tunnelSecrets inline values.
+  enabled: false
+  # -- How often to refresh secrets from the external store
+  refreshInterval: "1h"
+  # -- Reference to the SecretStore or ClusterSecretStore
+  secretStoreRef:
+    # -- Name of the SecretStore/ClusterSecretStore
+    name: ""
+    # -- Kind of the secret store (SecretStore or ClusterSecretStore)
+    kind: SecretStore
+  # -- Remote reference for tunnel credentials JSON file
+  credentials:
+    # -- Key in the external secret store containing the credentials
+    key: ""
+    # -- Optional: property within the secret (for secrets with multiple keys)
+    property: ""
+  # -- Remote reference for tunnel certificate PEM file
+  certificate:
+    # -- Key in the external secret store containing the certificate
+    key: ""
+    # -- Optional: property within the secret (for secrets with multiple keys)
+    property: ""
+
 # -- This is for setting up the cloudflared tunnel secrets. For more information checkout: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/local-management/create-local-tunnel/
 tunnelSecrets:
   # -- This is for cloudflared tunnel certificate PEM file.

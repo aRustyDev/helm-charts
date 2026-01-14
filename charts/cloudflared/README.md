@@ -88,6 +88,40 @@ tunnelSecrets:
     name: cert-pem-file-secret
 ```
 
+### Using External Secrets Operator
+
+If you're using [External Secrets Operator](https://external-secrets.io/) to manage secrets from external stores (AWS Secrets Manager, HashiCorp Vault, Azure Key Vault, etc.), you can configure the chart to automatically create an `ExternalSecret` resource.
+
+> **Note**: External Secrets integration is mutually exclusive with inline base64 secrets and existing secrets. Choose one method.
+
+#### Prerequisites
+
+1. External Secrets Operator installed in your cluster
+2. A configured `SecretStore` or `ClusterSecretStore` with access to your secret store
+3. Tunnel credentials stored in your external secret store
+
+#### Configuration
+
+```yaml
+externalSecrets:
+  enabled: true
+  refreshInterval: "1h"  # How often to sync secrets
+  secretStoreRef:
+    name: my-secret-store
+    kind: SecretStore  # or ClusterSecretStore
+  credentials:
+    key: cloudflare/tunnel-credentials  # Path in your secret store
+    property: ""  # Optional: specific property within the secret
+  certificate:
+    key: cloudflare/tunnel-certificate
+    property: ""
+
+tunnelConfig:
+  name: my-tunnel
+```
+
+The chart will create an `ExternalSecret` resource that syncs your credentials from the external store to a Kubernetes Secret, which is then mounted by the cloudflared deployment.
+
 ### Configuring Ingress
 
 The default ingress configuration is shown below. Replace the placeholder values with your domain and server settings. It is recommended to use a separate `values.yaml` file to manage this configuration.
@@ -156,6 +190,15 @@ helm upgrade [RELEASE_NAME] community-charts/cloudflared
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | For more information checkout: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity |
+| externalSecrets | object | `{"enabled":false,"refreshInterval":"1h","secretStoreRef":{"name":"","kind":"SecretStore"},"credentials":{"key":"","property":""},"certificate":{"key":"","property":""}}` | External Secrets Operator integration for managing tunnel credentials from external secret stores. For more information checkout: https://external-secrets.io/ |
+| externalSecrets.enabled | bool | `false` | Enable External Secrets Operator integration. Mutually exclusive with tunnelSecrets inline values. |
+| externalSecrets.refreshInterval | string | `"1h"` | How often to refresh secrets from the external store |
+| externalSecrets.secretStoreRef.name | string | `""` | Name of the SecretStore/ClusterSecretStore |
+| externalSecrets.secretStoreRef.kind | string | `"SecretStore"` | Kind of the secret store (SecretStore or ClusterSecretStore) |
+| externalSecrets.credentials.key | string | `""` | Key in the external secret store containing the credentials |
+| externalSecrets.credentials.property | string | `""` | Optional: property within the secret (for secrets with multiple keys) |
+| externalSecrets.certificate.key | string | `""` | Key in the external secret store containing the certificate |
+| externalSecrets.certificate.property | string | `""` | Optional: property within the secret (for secrets with multiple keys) |
 | fullnameOverride | string | `""` |  |
 | image | object | `{"pullPolicy":"IfNotPresent","repository":"cloudflare/cloudflared","tag":""}` | This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/ |
 | image.pullPolicy | string | `"IfNotPresent"` | This sets the pull policy for images. |
