@@ -219,3 +219,18 @@ metrics:
     metricRelabelings: []
     # -- Relabeling configs
     relabelings: []
+
+# -- Linkerd service mesh integration. For more information checkout: https://linkerd.io/
+linkerd:
+  # -- Enable Linkerd service mesh integration
+  enabled: false
+  # -- Ports to skip from Linkerd proxy (Cloudflare edge uses 443 and 7844 for QUIC).
+  # These are excluded to avoid double-TLS and allow direct connection to Cloudflare.
+  skipOutboundPorts: "443,7844"
+  # -- Additional Linkerd annotations for fine-tuning proxy behavior
+  annotations: {}
+    # config.linkerd.io/proxy-cpu-request: "100m"
+    # config.linkerd.io/proxy-memory-request: "128Mi"
+    # config.linkerd.io/proxy-cpu-limit: "1"
+    # config.linkerd.io/proxy-memory-limit: "256Mi"
+    # config.linkerd.io/opaque-ports: "7844"

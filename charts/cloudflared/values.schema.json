@@ -1003,6 +1003,36 @@
       "required": ["type"],
       "title": "updateStrategy",
       "type": "object"
+    },
+    "linkerd": {
+      "additionalProperties": false,
+      "description": "Linkerd service mesh integration. For more information checkout: https://linkerd.io/",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Enable Linkerd service mesh integration",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "skipOutboundPorts": {
+          "default": "443,7844",
+          "description": "Ports to skip from Linkerd proxy (Cloudflare edge uses 443 and 7844 for QUIC)",
+          "required": [],
+          "title": "skipOutboundPorts",
+          "type": "string"
+        },
+        "annotations": {
+          "additionalProperties": true,
+          "description": "Additional Linkerd annotations for fine-tuning proxy behavior",
+          "required": [],
+          "title": "annotations",
+          "type": "object"
+        }
+      },
+      "required": ["enabled"],
+      "title": "linkerd",
+      "type": "object"
     }
   },
   "required": [
@@ -1026,7 +1056,8 @@
     "nodeSelector",
     "tolerations",
     "affinity",
-    "metrics"
+    "metrics",
+    "linkerd"
   ],
   "type": "object"
 }

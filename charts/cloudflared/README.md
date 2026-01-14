@@ -167,6 +167,51 @@ metrics:
       prometheus.io/path: "/metrics"
 ```
 
+### Linkerd Service Mesh
+
+This chart supports [Linkerd](https://linkerd.io/) service mesh integration for automatic mTLS between cloudflared and your origin services.
+
+#### Enabling Linkerd
+
+```yaml
+linkerd:
+  enabled: true
+```
+
+When enabled, the chart adds the `linkerd.io/inject: enabled` annotation to pods, triggering automatic sidecar injection.
+
+#### Skip Outbound Ports
+
+By default, ports 443 and 7844 are excluded from the Linkerd proxy:
+
+```yaml
+linkerd:
+  enabled: true
+  skipOutboundPorts: "443,7844"  # Default value
+```
+
+**Why skip these ports?**
+- **Port 443**: Used for HTTPS connections to Cloudflare's API
+- **Port 7844**: Used for QUIC tunnel traffic to Cloudflare's edge
+
+These connections already use TLS with Cloudflare's certificates. Proxying them through Linkerd would cause double-TLS overhead and potentially break certificate validation. QUIC traffic (UDP-based) cannot be proxied by Linkerd.
+
+#### Custom Proxy Configuration
+
+Fine-tune the Linkerd proxy with additional annotations:
+
+```yaml
+linkerd:
+  enabled: true
+  annotations:
+    config.linkerd.io/proxy-cpu-request: "100m"
+    config.linkerd.io/proxy-memory-request: "128Mi"
+    config.linkerd.io/proxy-cpu-limit: "1"
+    config.linkerd.io/proxy-memory-limit: "256Mi"
+```
+
+> **Note**: Linkerd must be installed in your cluster before enabling this feature. See [Linkerd Getting Started](https://linkerd.io/2/getting-started/) for installation instructions.
+
 ### Configuring Ingress
 
 The default ingress configuration is shown below. Replace the placeholder values with your domain and server settings. It is recommended to use a separate `values.yaml` file to manage this configuration.
