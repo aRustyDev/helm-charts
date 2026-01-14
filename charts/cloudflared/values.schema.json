@@ -1,0 +1,723 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "affinity": {
+      "additionalProperties": true,
+      "description": "For more information checkout: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity",
+      "required": [],
+      "title": "affinity",
+      "type": "object"
+    },
+    "fullnameOverride": {
+      "default": "",
+      "required": [],
+      "title": "fullnameOverride",
+      "type": "string"
+    },
+    "global": {
+      "additionalProperties": true,
+      "description": "Global values are values that can be accessed from any chart or subchart by exactly the same name.",
+      "required": [],
+      "title": "global",
+      "type": "object"
+    },
+    "image": {
+      "additionalProperties": false,
+      "description": "This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/",
+      "properties": {
+        "pullPolicy": {
+          "default": "IfNotPresent",
+          "description": "This sets the pull policy for images.",
+          "required": [],
+          "title": "pullPolicy",
+          "type": "string",
+          "enum": ["IfNotPresent", "Never", "Always"]
+        },
+        "repository": {
+          "default": "cloudflare/cloudflared",
+          "description": "The docker image repository to use",
+          "required": [],
+          "title": "repository",
+          "type": "string"
+        },
+        "tag": {
+          "default": "",
+          "description": "Overrides the image tag whose default is the chart appVersion.",
+          "required": [],
+          "title": "tag",
+          "type": "string"
+        }
+      },
+      "required": ["repository", "pullPolicy", "tag"],
+      "title": "image",
+      "type": "object"
+    },
+    "imagePullSecrets": {
+      "description": "This is for the secretes for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/",
+      "items": {
+        "required": []
+      },
+      "required": [],
+      "title": "imagePullSecrets",
+      "type": "array"
+    },
+    "ingress": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "hostname": {
+            "default": "example.com",
+            "required": [],
+            "title": "hostname",
+            "type": "string"
+          },
+          "path": {
+            "default": "\\.(jpg|png|css|js)$",
+            "required": [],
+            "title": "path",
+            "type": "string"
+          },
+          "service": {
+            "default": "hello_world",
+            "required": [],
+            "title": "service",
+            "type": "string"
+          },
+          "originRequest": {
+            "additionalProperties": true,
+            "description": "Please find more details from: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/configure-tunnels/cloudflared-parameters/origin-parameters/",
+            "properties": {
+              "connectTimeout": {
+                "default": "10s",
+                "description": "Timeout for establishing a new TCP connection to your origin server. This excludes the time taken to establish TLS, which is controlled by tlsTimeout.",
+                "required": [],
+                "title": "connectTimeout",
+                "type": "string"
+              },
+              "tlsTimeout": {
+                "default": "10s",
+                "description": "Timeout for completing a TLS handshake to your origin server, if you have chosen to connect Tunnel to an HTTPS server.",
+                "required": [],
+                "title": "connectTimeout",
+                "type": "string"
+              },
+              "tcpKeepAlive": {
+                "default": "30s",
+                "description": "The timeout after which a TCP keepalive packet is sent on a connection between Cloudflare and the origin server.",
+                "required": [],
+                "title": "tcpKeepAlive",
+                "type": "string"
+              },
+              "noHappyEyeballs": {
+                "default": false,
+                "description": "When false, cloudflared uses the Happy Eyeballs algorithm for IPv4/IPv6 fallback if your local network has misconfigured one of the protocols. When true, Happy Eyeballs is disabled.",
+                "required": [],
+                "title": "noHappyEyeballs",
+                "type": "boolean"
+              },
+              "keepAliveConnections": {
+                "default": 100,
+                "description": "Maximum number of idle keepalive connections between Cloudflare and your origin. This does not restrict the total number of concurrent connections.",
+                "required": [],
+                "title": "keepAliveConnections",
+                "type": "integer"
+              },
+              "keepAliveTimeout": {
+                "default": "1m30s",
+                "description": "Timeout after which an idle keepalive connection can be discarded.",
+                "required": [],
+                "title": "keepAliveTimeout",
+                "type": "string"
+              },
+              "httpHostHeader": {
+                "default": "",
+                "description": "Sets the HTTP Host header on requests sent to the local service.",
+                "required": [],
+                "title": "httpHostHeader",
+                "type": "string"
+              },
+              "originServerName": {
+                "default": "",
+                "description": "Hostname that cloudflared should expect from your origin server certificate. If null, the expected hostname is the service URL, for example localhost if the service is https://localhost:443.",
+                "required": [],
+                "title": "originServerName",
+                "type": "string"
+              },
+              "matchSNItoHost": {
+                "default": false,
+                "description": "Auto configure the Hostname on the origin server certificate.",
+                "required": [],
+                "title": "matchSNItoHost",
+                "type": "boolean"
+              },
+              "caPool": {
+                "default": "",
+                "description": "Local file path to the certificate authority (CA) for your origin server certificate (for example, /root/certs/ca.pem). The path should point to a certificate store file or a bundle file in .pem or .crt format that contains one or more trusted root CA certificates. You should only configure this setting if your certificate is not signed by Cloudflare.",
+                "required": [],
+                "title": "caPool",
+                "type": "string"
+              },
+              "noTLSVerify": {
+                "default": false,
+                "description": "When false, TLS verification is performed on the certificate presented by your origin. When true, TLS verification is disabled. This will allow any certificate from the origin to be accepted.",
+                "required": [],
+                "title": "noTLSVerify",
+                "type": "boolean"
+              },
+              "disableChunkedEncoding": {
+                "default": true,
+                "description": "When false, cloudflared performs chunked transfer encoding when transferring data over HTTP/1.1. When true, chunked transfer encoding is disabled. This is useful if you are running a Web Server Gateway Interface (WSGI) server.",
+                "required": [],
+                "title": "disableChunkedEncoding",
+                "type": "boolean"
+              },
+              "bastionMode": {
+                "default": false,
+                "description": "Runs as jump host",
+                "required": [],
+                "title": "bastionMode",
+                "type": "boolean"
+              },
+              "proxyAddress": {
+                "default": "127.0.0.1",
+                "description": "cloudflared starts a proxy server to translate HTTP traffic into TCP when proxying, for example, SSH or RDP. This configures the listen address for that proxy.",
+                "required": [],
+                "title": "proxyAddress",
+                "type": "string"
+              },
+              "proxyPort": {
+                "default": 0,
+                "description": "cloudflared starts a proxy server to translate HTTP traffic into TCP when proxying, for example, SSH or RDP. This configures the listen port for that proxy. If set to zero, an unused port will randomly be chosen.",
+                "required": [],
+                "title": "proxyPort",
+                "type": "integer"
+              },
+              "proxyType": {
+                "default": "",
+                "description": "cloudflared starts a proxy server to translate HTTP traffic into TCP when proxying, for example, SSH or RDP. This configures what type of proxy will be started. Valid options are: '' for the regular proxy, 'socks' for a SOCKS5 proxy. Refer to the tutorial on connecting through Cloudflare Access using kubectl for more information. https://developers.cloudflare.com/cloudflare-one/tutorials/kubectl/",
+                "required": [],
+                "title": "proxyType",
+                "type": "string"
+              },
+              "ipRules": {
+                "additionalProperties": true,
+                "description": "IP rules for the proxy service",
+                "default": [],
+                "title": "ipRules",
+                "type": "array"
+              },
+              "http2Origin": {
+                "default": false,
+                "description": "When false, cloudflared will connect to your origin with HTTP/1.1. When true, cloudflared will attempt to connect to your origin server using HTTP/2.0 instead of HTTP/1.1. HTTP/2.0 is a faster protocol for high traffic origins but requires you to deploy an SSL certificate on the origin. We recommend using this setting in conjunction with noTLSVerify so that you can use a self-signed certificate.",
+                "required": [],
+                "title": "http2Origin",
+                "type": "boolean"
+              },
+              "access": {
+                "additionalProperties": true,
+                "description": "Access holds all access related configs",
+                "required": [],
+                "title": "access",
+                "properties": {
+                  "required": {
+                    "default": false,
+                    "description": "Required when set to true will fail every request that does not arrive through an access authenticated endpoint.",
+                    "required": [],
+                    "title": "required",
+                    "type": "boolean"
+                  },
+                  "teamName": {
+                    "default": "",
+                    "description": "TeamName is the organization team name to get the public key certificates for.",
+                    "required": [],
+                    "title": "teamName",
+                    "type": "string"
+                  },
+                  "audTag": {
+                    "default": [],
+                    "description": "AudTag is the AudTag to verify access JWT against.",
+                    "required": [],
+                    "title": "audTag",
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "required": [],
+            "title": "originRequest",
+            "type": "object"
+          }
+        },
+        "required": ["service"],
+        "type": "object"
+      },
+      "minItems": 1,
+      "required": [],
+      "title": "ingress",
+      "type": "array"
+    },
+    "nameOverride": {
+      "default": "",
+      "description": "This is to override the chart name.",
+      "required": [],
+      "title": "nameOverride",
+      "type": "string"
+    },
+    "nodeSelector": {
+      "additionalProperties": true,
+      "description": "For more information checkout: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector",
+      "required": [],
+      "title": "nodeSelector",
+      "type": "object"
+    },
+    "podAnnotations": {
+      "additionalProperties": true,
+      "description": "This is for setting Kubernetes Annotations to a Pod. For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/",
+      "required": [],
+      "title": "podAnnotations",
+      "type": "object"
+    },
+    "podLabels": {
+      "additionalProperties": true,
+      "description": "This is for setting Kubernetes Labels to a Pod. For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/",
+      "required": [],
+      "title": "podLabels",
+      "type": "object"
+    },
+    "podSecurityContext": {
+      "additionalProperties": true,
+      "description": "This is for setting Security Context to a Pod. For more information checkout: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/",
+      "properties": {
+        "runAsUser": {
+          "default": 1000,
+          "required": [],
+          "title": "runAsUser",
+          "type": "integer"
+        },
+        "runAsGroup": {
+          "default": 3000,
+          "required": [],
+          "title": "runAsGroup",
+          "type": "integer"
+        },
+        "fsGroup": {
+          "default": 2000,
+          "required": [],
+          "title": "fsGroup",
+          "type": "integer"
+        },
+        "supplementalGroups": {
+          "items": {
+            "required": []
+          },
+          "required": [],
+          "title": "runAsUser",
+          "type": "array"
+        },
+        "fsGroupChangePolicy": {
+          "default": "OnRootMismatch",
+          "required": [],
+          "title": "fsGroupChangePolicy",
+          "type": "string",
+          "enum": ["OnRootMismatch", "Always"]
+        },
+        "sysctls": {
+          "items": {
+            "properties": {
+              "name": {
+                "required": [],
+                "title": "name",
+                "type": "string"
+              },
+              "value": {
+                "required": [],
+                "title": "value",
+                "type": "string"
+              }
+            },
+            "required": ["name", "value"]
+          },
+          "required": [],
+          "title": "sysctls",
+          "type": "array",
+          "minItems": 1
+        }
+      },
+      "required": [],
+      "title": "podSecurityContext",
+      "type": "object"
+    },
+    "replica": {
+      "additionalProperties": false,
+      "description": "This will set the replicaset count more information can be found here: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/",
+      "properties": {
+        "allNodes": {
+          "default": true,
+          "description": "This will use DaemonSet to deploy cloudflared to all nodes",
+          "required": [],
+          "title": "allNodes",
+          "type": "boolean"
+        },
+        "count": {
+          "default": 1,
+          "description": "If previous flag disabled, this will use Deployment to deploy cloudflared only number of following count",
+          "required": [],
+          "title": "count",
+          "type": "integer"
+        }
+      },
+      "required": ["allNodes"],
+      "title": "replica",
+      "type": "object"
+    },
+    "resources": {
+      "additionalProperties": true,
+      "description": "This block is for setting up the resource management for the pod more information can be found here: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/",
+      "properties": {
+        "limits": {
+          "additionalProperties": true,
+          "properties": {
+            "cpu": {
+              "default": "400m",
+              "required": [],
+              "title": "cpu",
+              "type": "string"
+            },
+            "memory": {
+              "default": "128Mi",
+              "required": [],
+              "title": "memory",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "limits",
+          "type": "object"
+        },
+        "requests": {
+          "additionalProperties": true,
+          "properties": {
+            "cpu": {
+              "default": "100m",
+              "required": [],
+              "title": "cpu",
+              "type": "string"
+            },
+            "memory": {
+              "default": "64Mi",
+              "required": [],
+              "title": "memory",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "requests",
+          "type": "object"
+        }
+      },
+      "required": [],
+      "title": "resources",
+      "type": "object"
+    },
+    "securityContext": {
+      "additionalProperties": true,
+      "description": "This is for setting Security Context to a Container. For more information checkout: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/",
+      "properties": {
+        "allowPrivilegeEscalation": {
+          "default": false,
+          "required": [],
+          "title": "allowPrivilegeEscalation",
+          "type": "boolean"
+        },
+        "readOnlyRootFilesystem": {
+          "default": true,
+          "required": [],
+          "title": "readOnlyRootFilesystem",
+          "type": "boolean"
+        },
+        "runAsNonRoot": {
+          "default": true,
+          "required": [],
+          "title": "runAsNonRoot",
+          "type": "boolean"
+        },
+        "runAsUser": {
+          "default": 1000,
+          "required": [],
+          "title": "runAsUser",
+          "type": "integer"
+        },
+        "capabilities": {
+          "additionalProperties": true,
+          "properties": {
+            "drop": {
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "drop",
+              "type": "array"
+            },
+            "add": {
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "add",
+              "type": "array"
+            }
+          },
+          "required": [],
+          "title": "capabilities",
+          "type": "object"
+        }
+      },
+      "required": [],
+      "title": "securityContext",
+      "type": "object"
+    },
+    "serviceAccount": {
+      "additionalProperties": false,
+      "description": "This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/",
+      "properties": {
+        "annotations": {
+          "additionalProperties": true,
+          "description": "Annotations to add to the service account",
+          "required": [],
+          "title": "annotations",
+          "type": "object"
+        },
+        "automount": {
+          "default": true,
+          "description": "Automatically mount a ServiceAccount's API credentials?",
+          "required": [],
+          "title": "automount",
+          "type": "boolean"
+        },
+        "create": {
+          "default": true,
+          "description": "Specifies whether a service account should be created",
+          "required": [],
+          "title": "create",
+          "type": "boolean"
+        },
+        "name": {
+          "default": "",
+          "description": "The name of the service account to use. If not set and create is true, a name is generated using the fullname template",
+          "required": [],
+          "title": "name",
+          "type": "string"
+        }
+      },
+      "required": ["create", "automount", "annotations", "name"],
+      "title": "serviceAccount",
+      "type": "object"
+    },
+    "terminationGracePeriodSeconds": {
+      "default": 30,
+      "required": [],
+      "title": "terminationGracePeriodSeconds",
+      "type": "integer"
+    },
+    "tolerations": {
+      "description": "For more information checkout: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/",
+      "items": {
+        "required": []
+      },
+      "required": [],
+      "title": "tolerations",
+      "type": "array"
+    },
+    "tunnelConfig": {
+      "additionalProperties": false,
+      "description": "Please find more configuration from https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/configuration/arguments/",
+      "properties": {
+        "autoUpdateFrequency": {
+          "default": "24h",
+          "required": [],
+          "title": "autoUpdateFrequency",
+          "type": "string"
+        },
+        "connectTimeout": {
+          "default": "30s",
+          "required": [],
+          "title": "connectTimeout",
+          "type": "string"
+        },
+        "gracePeriod": {
+          "default": "30s",
+          "required": [],
+          "title": "gracePeriod",
+          "type": "string"
+        },
+        "logLevel": {
+          "default": "info",
+          "description": "info, warn, error, fatal, panic",
+          "required": [],
+          "title": "logLevel",
+          "type": "string"
+        },
+        "metricsUpdateFrequency": {
+          "default": "5s",
+          "required": [],
+          "title": "metricsUpdateFrequency",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "required": [],
+          "title": "name",
+          "type": "string"
+        },
+        "noAutoUpdate": {
+          "default": true,
+          "required": [],
+          "title": "noAutoUpdate",
+          "type": "boolean"
+        },
+        "protocol": {
+          "default": "auto",
+          "description": "auto, http2, h2mux, quic",
+          "required": [],
+          "title": "protocol",
+          "type": "string",
+          "enum": ["auto", "http2", "h2mux", "quic"]
+        },
+        "retries": {
+          "default": 5,
+          "required": [],
+          "title": "retries",
+          "type": "integer"
+        },
+        "transportLogLevel": {
+          "default": "warn",
+          "required": [],
+          "title": "transportLogLevel",
+          "type": "string",
+          "enum": ["debug", "info", "warn", "error", "fatal"]
+        },
+        "warpRouting": {
+          "default": false,
+          "required": [],
+          "title": "warpRouting",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "metricsUpdateFrequency",
+        "autoUpdateFrequency",
+        "noAutoUpdate",
+        "gracePeriod",
+        "retries",
+        "protocol",
+        "logLevel",
+        "transportLogLevel",
+        "connectTimeout",
+        "warpRouting"
+      ],
+      "title": "tunnelConfig",
+      "type": "object"
+    },
+    "tunnelSecrets": {
+      "additionalProperties": false,
+      "properties": {
+        "base64EncodedConfigJsonFile": {
+          "default": "",
+          "required": [],
+          "title": "base64EncodedConfigJsonFile",
+          "type": "string"
+        },
+        "base64EncodedPemFile": {
+          "default": "",
+          "required": [],
+          "title": "base64EncodedPemFile",
+          "type": "string"
+        },
+        "existingConfigJsonFileSecret": {
+          "additionalProperties": false,
+          "description": "This is for setting up the existing secret for the cloudflared tunnel configuration JSON file. If not set, the base64EncodedConfigJsonFile will be used.",
+          "properties": {
+            "name": {
+              "default": "",
+              "description": "The name of the existing secret.",
+              "required": [],
+              "title": "name",
+              "type": "string"
+            },
+            "key": {
+              "default": "credentials.json",
+              "description": "The key of the configuration JSON file in the existing secret.",
+              "required": [],
+              "title": "key",
+              "type": "string"
+            }
+          },
+          "required": ["name", "key"]
+        },
+        "existingPemFileSecret": {
+          "additionalProperties": false,
+          "description": "This is for setting up the existing secret for the cloudflared tunnel certificate PEM file. If not set, the base64EncodedPemFile will be used.",
+          "properties": {
+            "name": {
+              "default": "",
+              "description": "The name of the existing secret.",
+              "required": [],
+              "title": "name",
+              "type": "string"
+            },
+            "key": {
+              "default": "cert.pem",
+              "description": "The key of the certificate PEM file in the existing secret.",
+              "required": [],
+              "title": "key",
+              "type": "string"
+            }
+          },
+          "required": ["name", "key"]
+        }
+      },
+      "required": ["base64EncodedPemFile", "base64EncodedConfigJsonFile", "existingPemFileSecret", "existingConfigJsonFileSecret"],
+      "title": "tunnelSecrets",
+      "type": "object"
+    },
+    "updateStrategy": {
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "default": "RollingUpdate",
+          "required": [],
+          "title": "type",
+          "type": "string"
+        }
+      },
+      "required": ["type"],
+      "title": "updateStrategy",
+      "type": "object"
+    }
+  },
+  "required": [
+    "replica",
+    "terminationGracePeriodSeconds",
+    "image",
+    "updateStrategy",
+    "imagePullSecrets",
+    "nameOverride",
+    "fullnameOverride",
+    "serviceAccount",
+    "podAnnotations",
+    "podLabels",
+    "podSecurityContext",
+    "securityContext",
+    "tunnelSecrets",
+    "tunnelConfig",
+    "ingress",
+    "resources",
+    "nodeSelector",
+    "tolerations",
+    "affinity"
+  ],
+  "type": "object"
+}

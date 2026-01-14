@@ -1,6 +1,12 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "packages": {
+    "charts/cloudflared": {
+      "release-type": "helm",
+      "package-name": "cloudflared",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true
+    },
     "charts/olm": {
       "release-type": "helm",
       "package-name": "holmes",

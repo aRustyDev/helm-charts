@@ -1,0 +1,11 @@
+chart-dirs:
+  - charts
+target-branch: main
+helm-extra-args: --timeout 600s
+validate-maintainers: true
+check-version-increment: false  # release-please handles versioning
+
+# Charts that require external services for install tests
+# These are linted but not installed in CI
+excluded-charts:
+  - cloudflared  # Requires real Cloudflare tunnel credentials

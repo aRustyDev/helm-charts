@@ -9,6 +9,7 @@
 
 # Charts
 
+- [cloudflared](./cloudflared/index.md)
 - [holmes (OLM)](./charts/holmes.md)
 - [mdbook-htmx](./charts/mdbook-htmx.md)
 
@@ -31,6 +32,8 @@
   - [ADR-003: Semantic Versioning with Release-Please](./adr/003-semantic-versioning.md)
   - [ADR-004: Helm Chart Signing and Provenance](./adr/004-chart-signing.md)
   - [ADR-005: CI/CD Workflow Architecture](./adr/005-ci-workflows.md)
+  - [ADR-006: Release-Please for Helm Chart Versioning](./adr/006-release-please-versioning.md)
+  - [ADR-007: Separate Chart-Testing Configs](./adr/007-separate-ct-configs.md)
 
 # Security
 
