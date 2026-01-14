@@ -40,23 +40,23 @@ description: A Helm chart for cloudflare tunnel
 home: https://github.com/cloudflare/cloudflared
 icon: https://raw.githubusercontent.com/cloudflare/color/refs/heads/master/static/thinking/logo.png
 keywords:
-- cloudflared
-- cloudflare
-- cloudflare-tunnel
-- kubernetes
-- reverse-proxy
-- argo-tunnel
-- argo
-- tunnel
-- zero-trust-network-access
+  - cloudflared
+  - cloudflare
+  - cloudflare-tunnel
+  - kubernetes
+  - reverse-proxy
+  - argo-tunnel
+  - argo
+  - tunnel
+  - zero-trust-network-access
 kubeVersion: '>=1.21.0-0'
 maintainers:
-- email: adam@arustydev.io
-  name: aRustyDev
-  url: https://github.com/aRustyDev
+  - email: adam@arustydev.io
+    name: aRustyDev
+    url: https://github.com/aRustyDev
 name: cloudflared
 sources:
-- https://github.com/aRustyDev/helm-charts
-- https://github.com/cloudflare/cloudflared
+  - https://github.com/aRustyDev/helm-charts
+  - https://github.com/cloudflare/cloudflared
 type: application
-version: 0.1.0
+version: 0.2.0
