@@ -621,6 +621,99 @@
       "title": "tunnelConfig",
       "type": "object"
     },
+    "externalSecrets": {
+      "additionalProperties": false,
+      "description": "External Secrets Operator integration for managing tunnel credentials from external secret stores. For more information checkout: https://external-secrets.io/",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Enable External Secrets Operator integration. Mutually exclusive with tunnelSecrets inline values.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "refreshInterval": {
+          "default": "1h",
+          "description": "How often to refresh secrets from the external store",
+          "required": [],
+          "title": "refreshInterval",
+          "type": "string"
+        },
+        "secretStoreRef": {
+          "additionalProperties": false,
+          "description": "Reference to the SecretStore or ClusterSecretStore",
+          "properties": {
+            "name": {
+              "default": "",
+              "description": "Name of the SecretStore/ClusterSecretStore",
+              "required": [],
+              "title": "name",
+              "type": "string"
+            },
+            "kind": {
+              "default": "SecretStore",
+              "description": "Kind of the secret store",
+              "required": [],
+              "title": "kind",
+              "type": "string",
+              "enum": ["SecretStore", "ClusterSecretStore"]
+            }
+          },
+          "required": ["name", "kind"],
+          "title": "secretStoreRef",
+          "type": "object"
+        },
+        "credentials": {
+          "additionalProperties": false,
+          "description": "Remote reference for tunnel credentials JSON file",
+          "properties": {
+            "key": {
+              "default": "",
+              "description": "Key in the external secret store containing the credentials",
+              "required": [],
+              "title": "key",
+              "type": "string"
+            },
+            "property": {
+              "default": "",
+              "description": "Optional: property within the secret (for secrets with multiple keys)",
+              "required": [],
+              "title": "property",
+              "type": "string"
+            }
+          },
+          "required": ["key"],
+          "title": "credentials",
+          "type": "object"
+        },
+        "certificate": {
+          "additionalProperties": false,
+          "description": "Remote reference for tunnel certificate PEM file",
+          "properties": {
+            "key": {
+              "default": "",
+              "description": "Key in the external secret store containing the certificate",
+              "required": [],
+              "title": "key",
+              "type": "string"
+            },
+            "property": {
+              "default": "",
+              "description": "Optional: property within the secret (for secrets with multiple keys)",
+              "required": [],
+              "title": "property",
+              "type": "string"
+            }
+          },
+          "required": ["key"],
+          "title": "certificate",
+          "type": "object"
+        }
+      },
+      "required": ["enabled"],
+      "title": "externalSecrets",
+      "type": "object"
+    },
     "tunnelSecrets": {
       "additionalProperties": false,
       "properties": {
@@ -711,6 +804,7 @@
     "podLabels",
     "podSecurityContext",
     "securityContext",
+    "externalSecrets",
     "tunnelSecrets",
     "tunnelConfig",
     "ingress",
