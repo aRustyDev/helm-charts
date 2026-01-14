@@ -24,8 +24,8 @@ annotations:
     - name: Official Documentation
       url: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
   artifacthub.io/maintainers: |
-    - name: burakince
-      email: burak.ince@linux.org.tr
+    - name: aRustyDev
+      email: adam@arustydev.io
   artifacthub.io/operator: "false"
   artifacthub.io/prerelease: "false"
   artifacthub.io/screenshots: |
@@ -51,9 +51,9 @@ keywords:
 - zero-trust-network-access
 kubeVersion: '>=1.21.0-0'
 maintainers:
-- email: burak.ince@linux.org.tr
-  name: burakince
-  url: https://www.burakince.com
+- email: adam@arustydev.io
+  name: aRustyDev
+  url: https://github.com/aRustyDev
 name: cloudflared
 sources:
 - https://github.com/aRustyDev/helm-charts
