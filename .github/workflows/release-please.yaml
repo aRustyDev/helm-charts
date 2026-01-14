@@ -67,7 +67,9 @@ jobs:
 
   release-charts:
     needs: release-please
-    if: needs.release-please.outputs.releases_created == 'true' || inputs.force_release == true
+    # Run if release-please created releases OR if manually triggered with force_release
+    # Use always() to run even if release-please job fails (e.g., when manually forcing)
+    if: always() && (needs.release-please.outputs.releases_created == 'true' || inputs.force_release == true)
     runs-on: ubuntu-latest
     permissions:
       contents: write
