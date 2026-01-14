@@ -23,6 +23,8 @@ Add the base cloudflared Helm chart with minimal modifications from the upstream
 ### Modified Files
 - `release-please-config.json` - Add cloudflared package
 - `.release-please-manifest.json` - Add cloudflared with version 0.1.0
+- `ct-install.yaml` - Exclude cloudflared from install tests (requires external service)
+- `.github/workflows/lint-test.yaml` - Use ct-install.yaml for install step
 
 ## Validation
 - [ ] `helm lint charts/cloudflared` passes
