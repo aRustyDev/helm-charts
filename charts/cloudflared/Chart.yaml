@@ -59,4 +59,4 @@ sources:
 - https://github.com/community-charts/helm-charts
 - https://github.com/cloudflare/cloudflared
 type: application
-version: 2.2.4
+version: 0.1.0

@@ -12,6 +12,12 @@
       "package-name": "mdbook-htmx",
       "changelog-path": "CHANGELOG.md",
       "bump-minor-pre-major": true
+    },
+    "charts/cloudflared": {
+      "release-type": "helm",
+      "package-name": "cloudflared",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true
     }
   },
   "separate-pull-requests": true
