@@ -19,15 +19,26 @@ jobs:
       releases_created: ${{ steps.release.outputs.releases_created }}
       paths_released: ${{ steps.release.outputs.paths_released }}
     steps:
+      # Load GitHub App credentials from 1Password
+      # See: https://github.com/aRustyDev/helm-charts/issues/39
+      - name: Load secrets from 1Password
+        id: op-secrets
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: false
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          X_REPO_AUTH_APP_ID: op://gh-shared/xauth/app/id
+          X_REPO_AUTH_PRIVATE_KEY: op://gh-shared/xauth/app/private-key.pem
+
       # Generate a token from the GitHub App to create PRs that trigger workflows
       # PRs created by GITHUB_TOKEN don't trigger workflows (GitHub security feature)
-      # See: https://github.com/aRustyDev/helm-charts/issues/39
       - name: Generate GitHub App Token
         id: app-token
         uses: actions/create-github-app-token@v1
         with:
-          app-id: ${{ vars.X_REPO_AUTH_APP_ID }}
-          private-key: ${{ secrets.X_REPO_AUTH_PRIVATE_KEY }}
+          app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
+          private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
 
       - uses: googleapis/release-please-action@v4
         id: release
