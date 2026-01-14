@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/aRustyDev/helm-charts/compare/cloudflared-v0.2.0...cloudflared-v0.3.0) (2026-01-14)
+
+
+### Features
+
+* **cloudflared:** add External Secrets Operator integration ([#37](https://github.com/aRustyDev/helm-charts/issues/37)) ([ad17042](https://github.com/aRustyDev/helm-charts/commit/ad170427bf438a719de81acb8822f3970f055304))
+
 ## [0.2.0](https://github.com/aRustyDev/helm-charts/compare/cloudflared-v0.1.0...cloudflared-v0.2.0) (2026-01-14)
 
 
