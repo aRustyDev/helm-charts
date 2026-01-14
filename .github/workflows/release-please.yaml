@@ -20,15 +20,33 @@ permissions:
   attestations: write
 
 jobs:
-  # Release-please using GitHub App token for both PRs and releases
-  # App token is required because GITHUB_TOKEN gets "Resource not accessible by integration" error
-  # See: https://github.com/aRustyDev/helm-charts/issues/42
+  # Release-please creates PRs and tracks releases, but we create GitHub releases manually
+  # due to persistent "Resource not accessible by integration" errors with both GITHUB_TOKEN
+  # and GitHub App tokens. See: https://github.com/aRustyDev/helm-charts/issues/42
   release-please:
     runs-on: ubuntu-latest
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
       paths_released: ${{ steps.release.outputs.paths_released }}
+      # Cloudflared outputs
+      cloudflared--release_created: ${{ steps.release.outputs['charts/cloudflared--release_created'] }}
+      cloudflared--tag_name: ${{ steps.release.outputs['charts/cloudflared--tag_name'] }}
+      cloudflared--version: ${{ steps.release.outputs['charts/cloudflared--version'] }}
+      cloudflared--sha: ${{ steps.release.outputs['charts/cloudflared--sha'] }}
+      # mdbook-htmx outputs
+      mdbook-htmx--release_created: ${{ steps.release.outputs['charts/mdbook-htmx--release_created'] }}
+      mdbook-htmx--tag_name: ${{ steps.release.outputs['charts/mdbook-htmx--tag_name'] }}
+      mdbook-htmx--version: ${{ steps.release.outputs['charts/mdbook-htmx--version'] }}
+      mdbook-htmx--sha: ${{ steps.release.outputs['charts/mdbook-htmx--sha'] }}
+      # OLM outputs
+      olm--release_created: ${{ steps.release.outputs['charts/olm--release_created'] }}
+      olm--tag_name: ${{ steps.release.outputs['charts/olm--tag_name'] }}
+      olm--version: ${{ steps.release.outputs['charts/olm--version'] }}
+      olm--sha: ${{ steps.release.outputs['charts/olm--sha'] }}
     steps:
+      # Load GitHub App credentials from 1Password for PR creation
+      # PRs created with App token trigger CI workflows (unlike GITHUB_TOKEN)
+      # See: https://github.com/aRustyDev/helm-charts/issues/39
       - name: Load secrets from 1Password
         id: op-secrets
         uses: 1password/load-secrets-action@v2
@@ -46,12 +64,101 @@ jobs:
           app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
           private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
 
+      # Release-please: Creates PRs with App token, skips GitHub release creation
+      # We create releases manually in release-charts job to avoid permission issues
       - uses: googleapis/release-please-action@v4
         id: release
         with:
           token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          skip-github-release: true
+
+      # Create GitHub releases manually using GITHUB_TOKEN
+      # This works because we're using gh CLI, not the release-please internal API
+      - name: Checkout for release notes
+        if: steps.release.outputs.releases_created == 'true'
+        uses: actions/checkout@v6
+
+      - name: Create GitHub Releases
+        if: steps.release.outputs.releases_created == 'true'
+        run: |
+          echo "Creating GitHub releases for merged release PR..."
+
+          # Process each chart that has a release
+          for chart_path in charts/*/; do
+            chart_name=$(basename "$chart_path")
+
+            # Map chart names to output format (replace / with --)
+            output_key="charts/${chart_name}"
+
+            # Check if this chart has a release (access outputs via env vars)
+            case "$chart_name" in
+              cloudflared)
+                release_created="${CLOUDFLARED_RELEASE_CREATED}"
+                tag_name="${CLOUDFLARED_TAG_NAME}"
+                version="${CLOUDFLARED_VERSION}"
+                sha="${CLOUDFLARED_SHA}"
+                ;;
+              mdbook-htmx)
+                release_created="${MDBOOK_HTMX_RELEASE_CREATED}"
+                tag_name="${MDBOOK_HTMX_TAG_NAME}"
+                version="${MDBOOK_HTMX_VERSION}"
+                sha="${MDBOOK_HTMX_SHA}"
+                ;;
+              olm)
+                release_created="${OLM_RELEASE_CREATED}"
+                tag_name="${OLM_TAG_NAME}"
+                version="${OLM_VERSION}"
+                sha="${OLM_SHA}"
+                ;;
+              *)
+                continue
+                ;;
+            esac
+
+            if [ "$release_created" = "true" ]; then
+              echo "📦 Creating release for $chart_name v$version (tag: $tag_name)"
+
+              # Get changelog content for this version
+              changelog_file="$chart_path/CHANGELOG.md"
+              if [ -f "$changelog_file" ]; then
+                # Extract changelog section for this version
+                release_notes=$(awk "/^## \[$version\]/{flag=1; next} /^## \[/{flag=0} flag" "$changelog_file")
+              else
+                release_notes="Release $chart_name v$version"
+              fi
+
+              # Create the release
+              gh release create "$tag_name" \
+                --target "$sha" \
+                --title "$chart_name: v$version" \
+                --notes "$release_notes" \
+                || echo "⚠️ Release $tag_name may already exist"
+
+              # Update PR label from 'autorelease: pending' to 'autorelease: tagged'
+              pr_number=$(gh pr list --state merged --search "release $chart_name $version" --json number --jq '.[0].number' 2>/dev/null || true)
+              if [ -n "$pr_number" ]; then
+                gh pr edit "$pr_number" --remove-label "autorelease: pending" --add-label "autorelease: tagged" 2>/dev/null || true
+              fi
+
+              echo "✅ Created release $tag_name"
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLOUDFLARED_RELEASE_CREATED: ${{ steps.release.outputs['charts/cloudflared--release_created'] }}
+          CLOUDFLARED_TAG_NAME: ${{ steps.release.outputs['charts/cloudflared--tag_name'] }}
+          CLOUDFLARED_VERSION: ${{ steps.release.outputs['charts/cloudflared--version'] }}
+          CLOUDFLARED_SHA: ${{ steps.release.outputs['charts/cloudflared--sha'] }}
+          MDBOOK_HTMX_RELEASE_CREATED: ${{ steps.release.outputs['charts/mdbook-htmx--release_created'] }}
+          MDBOOK_HTMX_TAG_NAME: ${{ steps.release.outputs['charts/mdbook-htmx--tag_name'] }}
+          MDBOOK_HTMX_VERSION: ${{ steps.release.outputs['charts/mdbook-htmx--version'] }}
+          MDBOOK_HTMX_SHA: ${{ steps.release.outputs['charts/mdbook-htmx--sha'] }}
+          OLM_RELEASE_CREATED: ${{ steps.release.outputs['charts/olm--release_created'] }}
+          OLM_TAG_NAME: ${{ steps.release.outputs['charts/olm--tag_name'] }}
+          OLM_VERSION: ${{ steps.release.outputs['charts/olm--version'] }}
+          OLM_SHA: ${{ steps.release.outputs['charts/olm--sha'] }}
 
   release-charts:
     needs: release-please
