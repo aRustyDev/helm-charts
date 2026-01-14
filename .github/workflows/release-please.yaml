@@ -40,12 +40,23 @@ jobs:
           app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
           private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
 
-      - uses: googleapis/release-please-action@v4
-        id: release
+      # Use App token for PRs (triggers CI workflows) but skip releases
+      - name: Release Please (PRs only)
+        uses: googleapis/release-please-action@v4
         with:
           token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          skip-github-release: true
+
+      # Use GITHUB_TOKEN for releases (has Contents:write permission)
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-pull-request: true
 
   release-charts:
     needs: release-please
