@@ -1,0 +1,22 @@
+# CI test values - these are dummy credentials for chart-testing
+# DO NOT use these in production - they are not real credentials
+
+tunnelConfig:
+  name: test-tunnel
+
+tunnelSecrets:
+  # Dummy base64-encoded credentials JSON for CI testing
+  base64EncodedConfigJsonFile: eyJBY2NvdW50VGFnIjoidGVzdCIsIlR1bm5lbElEIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAwIiwiVHVubmVsTmFtZSI6InRlc3QtdHVubmVsIiwiVHVubmVsU2VjcmV0IjoiZEdWemRITmxZM0psZEE9PSJ9Cg==
+  # Dummy base64-encoded certificate PEM for CI testing
+  base64EncodedPemFile: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCmRHVnpkR05sY25ScFptbGpZWFJsWTI5dWRHVnVkQT09Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+
+# Simple ingress for testing
+ingress:
+  - hostname: test.example.com
+    service: http://localhost:8080
+  - service: http_status:404
+
+# Use Deployment instead of DaemonSet for CI
+replica:
+  allNodes: false
+  count: 1
