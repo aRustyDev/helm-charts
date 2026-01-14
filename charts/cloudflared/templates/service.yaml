@@ -1,0 +1,24 @@
+{{- if and .Values.metrics.enabled .Values.metrics.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cloudflared.fullname" . }}-metrics
+  labels:
+    {{- include "cloudflared.labels" . | nindent 4 }}
+    {{- with .Values.metrics.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.metrics.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.metrics.service.type | default "ClusterIP" }}
+  ports:
+    - port: {{ .Values.metrics.port | default 2000 }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "cloudflared.selectorLabels" . | nindent 4 }}
+{{- end }}

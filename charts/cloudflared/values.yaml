@@ -1,0 +1,352 @@
+# yaml-language-server: $schema=values.schema.json
+# Default values for cloudflared.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# -- This will set the replicaset count more information can be found here: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
+replica:
+  # -- This will use DaemonSet to deploy cloudflared to all nodes
+  allNodes: true
+  # -- If previous flag disabled, this will use Deployment to deploy cloudflared only number of following count
+  count: 1
+
+terminationGracePeriodSeconds: 30
+
+# -- This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
+image:
+  # -- The docker image repository to use
+  repository: cloudflare/cloudflared
+  # -- This sets the pull policy for images.
+  pullPolicy: IfNotPresent
+  # -- Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+
+# -- This is for the secretes for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+imagePullSecrets: []
+# -- This is to override the chart name.
+nameOverride: ""
+fullnameOverride: ""
+
+# -- This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
+serviceAccount:
+  # -- Specifies whether a service account should be created
+  create: true
+  # -- Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # -- Annotations to add to the service account
+  annotations: {}
+  # -- The name of the service account to use. If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# -- This is for setting Kubernetes Annotations to a Pod. For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+podAnnotations: {}
+
+# -- This is for setting Kubernetes Labels to a Pod. For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+podLabels: {}
+
+# -- This is for setting Security Context to a Pod. For more information checkout: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+podSecurityContext:
+  fsGroup: 65532
+  fsGroupChangePolicy: "OnRootMismatch"
+  sysctls:
+    - name: net.ipv4.ping_group_range
+      value: "0 2147483647"
+
+# -- This is for setting Security Context to a Container. For more information checkout: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+    add: []
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  privileged: false
+  runAsUser: 65532
+  runAsGroup: 65532
+
+# -- This is for setting up the cloudflared tunnel secrets. For more information checkout: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/local-management/create-local-tunnel/
+tunnelSecrets:
+  # -- This is for cloudflared tunnel certificate PEM file.
+  base64EncodedPemFile: ""
+  # -- This is for cloudflared tunnel configuration JSON file.
+  base64EncodedConfigJsonFile: ""
+  # -- This is for setting up the existing secret for the cloudflared tunnel certificate PEM file. If not set, the base64EncodedPemFile will be used.
+  existingPemFileSecret:
+    # -- This is the name of the existing secret.
+    name: ""
+    # -- This is the key of the certificate PEM file in the existing secret.
+    key: "cert.pem"
+  # -- This is for setting up the existing secret for the cloudflared tunnel configuration JSON file. If not set, the base64EncodedConfigJsonFile will be used.
+  existingConfigJsonFileSecret:
+    # -- This is the name of the existing secret.
+    name: ""
+    # -- This is the key of the configuration JSON file in the existing secret.
+    key: "credentials.json"
+
+# -- External Secrets Operator integration for managing tunnel credentials from external secret stores.
+# @default -- See below
+externalSecrets:
+  # -- Enable External Secrets Operator integration
+  enabled: false
+  # -- How often to refresh the secret from the external store
+  refreshInterval: "1h"
+  # -- Reference to the SecretStore or ClusterSecretStore
+  secretStoreRef:
+    # -- Name of the SecretStore/ClusterSecretStore
+    name: ""
+    # -- Kind of the secret store (SecretStore or ClusterSecretStore)
+    kind: SecretStore
+  # -- Target secret configuration
+  target:
+    # -- Name of the Kubernetes secret to create (defaults to release name + "-credentials")
+    name: ""
+    # -- Creation policy for the secret
+    creationPolicy: Owner
+  # -- Data mappings from external secret store to Kubernetes secret keys
+  data:
+    # -- Credentials JSON file mapping
+    credentials:
+      # -- Key in the external secret store
+      remoteRef:
+        key: ""
+        # -- Property within the secret (optional, for JSON secrets)
+        property: ""
+      # -- Key name in the Kubernetes secret
+      secretKey: "credentials.json"
+    # -- Certificate PEM file mapping
+    certificate:
+      # -- Key in the external secret store
+      remoteRef:
+        key: ""
+        # -- Property within the secret (optional, for JSON secrets)
+        property: ""
+      # -- Key name in the Kubernetes secret
+      secretKey: "cert.pem"
+
+# -- Please find more configuration from https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/configuration/arguments/
+tunnelConfig:
+  # -- cloudflared tunnel name
+  name: ""
+  metricsUpdateFrequency: 5s
+  autoUpdateFrequency: 24h
+  noAutoUpdate: true
+  gracePeriod: 30s
+  retries: 5
+  # auto, http2, h2mux, quic
+  protocol: auto
+  # info, warn, error, fatal, panic
+  logLevel: info
+  transportLogLevel: warn
+  connectTimeout: 30s
+  warpRouting: false
+
+# -- Cloudflare ingress rules. More information can be found here: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/configure-tunnels/local-management/configuration-file/#how-traffic-is-matched
+ingress:
+  - hostname: example.com # or "*.example.com" but you must define a CNAME record for "*" to your DNS
+    service: http://traefik.kube-system.svc.cluster.local:80
+
+  - service: http_status:404
+
+# -- Linkerd service mesh integration for automatic mTLS between cloudflared and origin services
+# @default -- See below
+linkerd:
+  # -- Enable Linkerd proxy injection
+  enabled: false
+  # -- Additional Linkerd annotations to add to the pod
+  # @default -- See below
+  annotations: {}
+    # config.linkerd.io/proxy-cpu-request: "100m"
+    # config.linkerd.io/proxy-memory-request: "128Mi"
+    # config.linkerd.io/skip-outbound-ports: "4222"
+
+# -- Metrics and monitoring configuration
+# @default -- See below
+metrics:
+  # -- Enable metrics endpoint (cloudflared always exposes metrics, this controls service/monitor creation)
+  enabled: true
+  # -- Port for the metrics endpoint
+  port: 2000
+  # -- Path for the metrics endpoint
+  path: "/metrics"
+  # -- Service configuration for metrics
+  service:
+    # -- Create a service for metrics scraping
+    enabled: true
+    # -- Service type
+    type: ClusterIP
+    # -- Additional service annotations
+    annotations: {}
+    # -- Additional service labels
+    labels: {}
+  # -- ServiceMonitor configuration for Prometheus Operator
+  # @default -- See below
+  serviceMonitor:
+    # -- Create a ServiceMonitor resource
+    enabled: false
+    # -- Scrape interval
+    interval: "30s"
+    # -- Scrape timeout
+    scrapeTimeout: "10s"
+    # -- Additional labels for the ServiceMonitor
+    labels: {}
+    # -- Metric relabeling configuration
+    metricRelabelings: []
+    # -- Relabeling configuration
+    relabelings: []
+    # -- Namespace for the ServiceMonitor (defaults to release namespace)
+    namespace: ""
+  # -- PodMonitor configuration for Prometheus Operator (alternative to ServiceMonitor for DaemonSets)
+  # @default -- See below
+  podMonitor:
+    # -- Create a PodMonitor resource
+    enabled: false
+    # -- Scrape interval
+    interval: "30s"
+    # -- Scrape timeout
+    scrapeTimeout: "10s"
+    # -- Additional labels for the PodMonitor
+    labels: {}
+    # -- Metric relabeling configuration
+    metricRelabelings: []
+    # -- Relabeling configuration
+    relabelings: []
+    # -- Namespace for the PodMonitor (defaults to release namespace)
+    namespace: ""
+
+# -- Liveness and readiness probe configuration
+# @default -- See below
+probes:
+  # -- Liveness probe configuration
+  liveness:
+    # -- Enable liveness probe
+    enabled: true
+    # -- Path for HTTP GET probe
+    path: /ready
+    # -- Port for the probe
+    port: 2000
+    # -- Initial delay before starting probes
+    initialDelaySeconds: 10
+    # -- How often to perform the probe
+    periodSeconds: 10
+    # -- Number of seconds after which the probe times out
+    timeoutSeconds: 5
+    # -- Number of consecutive failures before marking unhealthy
+    failureThreshold: 3
+    # -- Number of consecutive successes before marking healthy
+    successThreshold: 1
+  # -- Readiness probe configuration
+  readiness:
+    # -- Enable readiness probe
+    enabled: true
+    # -- Path for HTTP GET probe
+    path: /ready
+    # -- Port for the probe
+    port: 2000
+    # -- Initial delay before starting probes
+    initialDelaySeconds: 5
+    # -- How often to perform the probe
+    periodSeconds: 5
+    # -- Number of seconds after which the probe times out
+    timeoutSeconds: 3
+    # -- Number of consecutive failures before marking not ready
+    failureThreshold: 3
+    # -- Number of consecutive successes before marking ready
+    successThreshold: 1
+
+# -- Network policy configuration for restricting traffic
+# @default -- See below
+networkPolicy:
+  # -- Enable network policy
+  enabled: false
+  # -- Policy types to enforce
+  policyTypes:
+    - Ingress
+    - Egress
+  # -- Ingress rules
+  ingress:
+    # -- Allow metrics scraping from specific namespaces
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 2000
+  # -- Egress rules (cloudflared needs outbound access to Cloudflare and origin services)
+  egress:
+    # -- Allow DNS resolution
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # -- Allow HTTPS to Cloudflare (tunnel connections)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: UDP
+          port: 443
+    # -- Allow access to cluster services (customize based on your ingress rules)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 8080
+
+# -- This block is for setting up the resource management for the pod more information can be found here: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+# -- For more information checkout: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector
+nodeSelector:
+  kubernetes.io/os: linux
+
+# -- For more information checkout: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
+tolerations:
+  # Make sure cloudflared gets scheduled on all nodes.
+  - effect: NoSchedule
+    operator: Exists
+
+# -- For more information checkout: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity
+affinity: {}
+
+# -- Extra environment variables to add to the container
+extraEnv: []
+  # - name: TUNNEL_ORIGIN_CERT
+  #   value: /path/to/cert.pem
+
+# -- Extra volume mounts to add to the container
+extraVolumeMounts: []
+  # - name: custom-certs
+  #   mountPath: /etc/ssl/custom
+  #   readOnly: true
+
+# -- Extra volumes to add to the pod
+extraVolumes: []
+  # - name: custom-certs
+  #   secret:
+  #     secretName: custom-tls-certs
