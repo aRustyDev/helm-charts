@@ -49,6 +49,7 @@ keywords:
   - argo
   - tunnel
   - zero-trust-network-access
+  - ztna
 kubeVersion: '>=1.21.0-0'
 maintainers:
   - email: adam@arustydev.io
