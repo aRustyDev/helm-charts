@@ -1,0 +1,81 @@
+# git-cliff configuration for Helm chart changelog generation
+# https://git-cliff.org
+
+[changelog]
+# Template for the changelog header
+header = """
+# Changelog
+
+All notable changes to this chart will be documented in this file.
+
+"""
+
+# Template for the changelog body (uses Tera template syntax)
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+## {{ group | striptags | trim | upper_first }}
+
+{% for commit in commits %}
+- {% if commit.scope %}*({{ commit.scope }})* {% endif %}{{ commit.message | split(pat="\n") | first | upper_first }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}/commit/{{ commit.id }}))
+{% endfor %}
+
+{% endfor %}
+"""
+
+# Changelog footer
+footer = ""
+
+# Trim leading and trailing whitespace from templates
+trim = true
+
+# Remove the leading and trailing whitespace from the templates
+postprocessors = []
+
+[git]
+# Parse commits based on conventional commits specification
+conventional_commits = true
+
+# Filter commits based on commit type
+filter_commits = true
+
+# Whether to remove commits that don't match any filter
+filter_unconventional = true
+
+# Process each line of a commit as an individual commit
+split_commits = false
+
+# Regex for matching git tags
+tag_pattern = ".*-v[0-9]+\\.[0-9]+\\.[0-9]+"
+
+# Sort commits within each group
+sort_commits = "oldest"
+
+# Commit parsers - map commit types to groups
+commit_parsers = [
+    { message = "^feat", group = "Features" },
+    { message = "^fix", group = "Bug Fixes" },
+    { message = "^docs", group = "Documentation" },
+    { message = "^perf", group = "Performance" },
+    { message = "^refactor", group = "Refactoring" },
+    { message = "^style", group = "Styling" },
+    { message = "^test", group = "Testing" },
+    { message = "^build", group = "Build" },
+    { message = "^ci", skip = true },
+    { message = "^chore\\(release\\)", skip = true },
+    { message = "^chore\\(main\\)", skip = true },
+    { message = "^chore", group = "Miscellaneous" },
+    { message = "^revert", group = "Reverts" },
+]
+
+# Protect breaking changes from being skipped by the commit parser
+protect_breaking_commits = false
+
+# Link parsers - parse issue/PR links
+link_parsers = [
+    { pattern = "#(\\d+)", href = "https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}/issues/$1" },
+    { pattern = "RFC(\\d+)", text = "ietf-rfc-$1", href = "https://datatracker.ietf.org/doc/html/rfc$1" },
+]
+
+[remote.github]
+owner = "aRustyDev"
+repo = "helm-charts"
