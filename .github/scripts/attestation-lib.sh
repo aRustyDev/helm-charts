@@ -260,9 +260,9 @@ detect_changed_charts() {
         xargs)
 
     if [[ -z "$charts" ]]; then
-        echo "::notice::No chart changes detected in range: $range"
+        echo "::notice::No chart changes detected in range: $range" >&2
     else
-        echo "::notice::Changed charts: $charts"
+        echo "::notice::Changed charts: $charts" >&2
     fi
 
     echo "$charts"

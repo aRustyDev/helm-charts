@@ -240,7 +240,7 @@ jobs:
         id: commitlint
         uses: wagoid/commitlint-github-action@v6
         with:
-          configFile: commitlint.config.js
+          configFile: commitlint.config.mjs
 
       - name: Generate validation digest
         id: digest

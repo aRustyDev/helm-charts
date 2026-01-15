@@ -24,7 +24,7 @@
  *   - General: deps, ci, docs, release, main
  */
 
-module.exports = {
+export default {
   extends: ['@commitlint/config-conventional'],
   rules: {
     // Type must be one of the allowed values
