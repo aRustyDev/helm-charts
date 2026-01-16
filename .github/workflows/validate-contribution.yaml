@@ -301,11 +301,11 @@ jobs:
             echo "## $chart" >> changelog.md
             echo "" >> changelog.md
 
-            # Generate changelog for this chart only
+            # Generate changelog for this chart only (compare against target branch, not tags)
             git cliff \
               --config .github/cliff.toml \
               --include-path "charts/$chart/**/*" \
-              --unreleased \
+              "origin/$TARGET_BRANCH..HEAD" \
               --strip header >> changelog.md 2>/dev/null || echo "_No conventional commits found for this chart._" >> changelog.md
 
             echo "" >> changelog.md
