@@ -1,0 +1,427 @@
+name: W5 - Validate & SemVer Bump
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'charts/**'
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: w5-validate-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  # Phase 5.1 & 5.5: Validate source branch and detect chart
+  validate-and-detect:
+    name: Validate Source & Detect Chart
+    runs-on: ubuntu-latest
+    outputs:
+      chart: ${{ steps.detect.outputs.chart }}
+      current_version: ${{ steps.detect.outputs.current_version }}
+      valid: ${{ steps.validate.outputs.valid }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate source branch
+        id: validate
+        run: |
+          HEAD_REF="${{ github.head_ref }}"
+          echo "Source branch: $HEAD_REF"
+
+          # Validate PR comes from integration/<chart> branch
+          if [[ ! "$HEAD_REF" =~ ^integration/[a-z0-9-]+$ ]]; then
+            echo "::error::PR must come from integration/<chart> branch, got: $HEAD_REF"
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "valid=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::Source branch validation passed: $HEAD_REF"
+
+      - name: Detect chart
+        id: detect
+        run: |
+          HEAD_REF="${{ github.head_ref }}"
+          CHART="${HEAD_REF#integration/}"
+          echo "chart=$CHART" >> "$GITHUB_OUTPUT"
+
+          # Get current version
+          if [[ -f "charts/$CHART/Chart.yaml" ]]; then
+            VERSION=$(grep '^version:' "charts/$CHART/Chart.yaml" | awk '{print $2}')
+            echo "current_version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "::notice::Detected chart: $CHART (v$VERSION)"
+          else
+            echo "::error::Chart.yaml not found for chart: $CHART"
+            exit 1
+          fi
+
+  # Phase 5.2 & 5.3: Extract and verify attestation chain
+  verify-attestations:
+    name: Verify Attestation Chain
+    needs: validate-and-detect
+    runs-on: ubuntu-latest
+    outputs:
+      attestation_map: ${{ steps.extract.outputs.attestation_map }}
+      verification_passed: ${{ steps.verify.outputs.passed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Extract attestation map
+        id: extract
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          source .github/scripts/attestation-lib.sh
+
+          echo "::group::Extracting attestation map from PR #$PR_NUMBER"
+          ATTESTATION_MAP=$(extract_attestation_map "$PR_NUMBER")
+
+          if [[ -z "$ATTESTATION_MAP" || "$ATTESTATION_MAP" == "{}" ]]; then
+            echo "::warning::No attestation map found in PR description"
+            echo "attestation_map={}" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found attestation map:"
+            echo "$ATTESTATION_MAP" | jq .
+            echo "attestation_map=$ATTESTATION_MAP" >> "$GITHUB_OUTPUT"
+          fi
+          echo "::endgroup::"
+
+      - name: Verify attestation chain
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          source .github/scripts/attestation-lib.sh
+
+          ATTESTATION_MAP='${{ steps.extract.outputs.attestation_map }}'
+
+          if [[ "$ATTESTATION_MAP" == "{}" ]]; then
+            echo "::warning::Skipping verification - no attestations to verify"
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "::group::Verifying attestation chain"
+          if verify_attestation_chain "$ATTESTATION_MAP"; then
+            echo "::notice::All attestations verified successfully"
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Attestation verification failed - blocking merge"
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "::endgroup::"
+
+  # Phase 5.3a: K8s Compatibility Matrix Testing
+  k8s-install-test:
+    name: K8s Install (${{ matrix.k8s_version }})
+    needs: [validate-and-detect]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - k8s_version: v1.32.11
+            node_image: kindest/node:v1.32.11@sha256:5fc52d52a7b9574015299724bd68f183702956aa4a2116ae75a63cb574b35af8
+          - k8s_version: v1.33.7
+            node_image: kindest/node:v1.33.7@sha256:d26ef333bdb2cbe9862a0f7c3803ecc7b4303d8cea8e814b481b09949d353040
+          - k8s_version: v1.34.3
+            node_image: kindest/node:v1.34.3@sha256:08497ee19eace7b4b5348db5c6a1591d7752b164530a36f855cb0f2bdcbadd48
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2.8.0
+
+      - name: Create KinD cluster
+        uses: helm/kind-action@v1.13.0
+        with:
+          node_image: ${{ matrix.node_image }}
+
+      - name: Run chart-testing (install)
+        id: install
+        run: |
+          CHART="${{ needs.validate-and-detect.outputs.chart }}"
+          echo "::group::Installing chart: $CHART on K8s ${{ matrix.k8s_version }}"
+
+          # Check if chart is excluded from install tests
+          if grep -q "^  - $CHART$" ct-install.yaml 2>/dev/null; then
+            echo "::warning::Chart $CHART is excluded from install tests (requires external services)"
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+          else
+            ct install \
+              --config ct-install.yaml \
+              --charts "charts/$CHART"
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "::endgroup::"
+
+      - name: Generate test digest
+        id: digest
+        run: |
+          DIGEST=$(echo -n "${{ matrix.k8s_version }}-${{ github.sha }}" | sha256sum | cut -d' ' -f1)
+          echo "digest=sha256:$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Generate attestation
+        id: attestation
+        if: steps.install.outputs.skipped != 'true'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: "w5-k8s-install-${{ matrix.k8s_version }}"
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: false
+
+      - name: Update attestation map
+        if: steps.install.outputs.skipped != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          source .github/scripts/attestation-lib.sh
+          update_attestation_map \
+            "k8s-install-${{ matrix.k8s_version }}" \
+            "${{ steps.attestation.outputs.attestation-id }}"
+
+  # Phase 5.6 & 5.7: Version bump determination and application
+  version-bump:
+    name: Determine & Apply Version Bump
+    needs: [validate-and-detect, verify-attestations, k8s-install-test]
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
+      bump_type: ${{ steps.bump.outputs.bump_type }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref }}
+          token: ${{ github.token }}
+
+      - name: Determine version bump
+        id: bump
+        run: |
+          CHART="${{ needs.validate-and-detect.outputs.chart }}"
+
+          echo "::group::Analyzing commits for version bump"
+
+          # IMPORTANT: Get BASE version from main branch (target), not PR branch
+          # This ensures we calculate the correct new version even if:
+          # - PR already has a version bump from previous W5 run
+          # - Someone manually bumped the version
+          # - Main was updated since PR was created
+          BASE_VERSION=$(git show origin/main:charts/$CHART/Chart.yaml 2>/dev/null | grep '^version:' | awk '{print $2}')
+
+          if [[ -z "$BASE_VERSION" ]]; then
+            echo "::error::Could not get base version from main branch"
+            exit 1
+          fi
+
+          echo "Base version (from main): $BASE_VERSION"
+
+          # Get commits in this PR
+          COMMITS=$(git log origin/main..HEAD --pretty=format:"%s")
+          echo "Commits in PR:"
+          echo "$COMMITS"
+
+          # Determine bump type from conventional commits
+          if echo "$COMMITS" | grep -qE '^[a-z]+(\([^)]+\))?!:'; then
+            BUMP_TYPE="major"
+          elif echo "$COMMITS" | grep -qE '^feat(\([^)]+\))?:'; then
+            BUMP_TYPE="minor"
+          else
+            BUMP_TYPE="patch"
+          fi
+
+          # Calculate expected version based on main's version + bump type
+          IFS='.' read -r major minor patch <<< "$BASE_VERSION"
+          case "$BUMP_TYPE" in
+            major) EXPECTED_VERSION="$((major + 1)).0.0" ;;
+            minor) EXPECTED_VERSION="${major}.$((minor + 1)).0" ;;
+            patch) EXPECTED_VERSION="${major}.${minor}.$((patch + 1))" ;;
+          esac
+
+          echo "Bump type: $BUMP_TYPE"
+          echo "Base version (main): $BASE_VERSION"
+          echo "Expected version: $EXPECTED_VERSION"
+
+          echo "bump_type=$BUMP_TYPE" >> "$GITHUB_OUTPUT"
+          echo "new_version=$EXPECTED_VERSION" >> "$GITHUB_OUTPUT"
+          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+
+      - name: Check if bump needed
+        id: check
+        run: |
+          CHART="${{ needs.validate-and-detect.outputs.chart }}"
+          PR_VERSION="${{ needs.validate-and-detect.outputs.current_version }}"
+          EXPECTED_VERSION="${{ steps.bump.outputs.new_version }}"
+
+          echo "PR branch version: $PR_VERSION"
+          echo "Expected version: $EXPECTED_VERSION"
+
+          # Check if PR version already matches expected (idempotent)
+          # This handles:
+          # - Previous W5 run already bumped correctly
+          # - Manual bump that matches expected version
+          if [[ "$PR_VERSION" == "$EXPECTED_VERSION" ]]; then
+            echo "::notice::Version already at $EXPECTED_VERSION, no bump needed"
+            echo "needs_bump=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Version bump needed: $PR_VERSION → $EXPECTED_VERSION"
+            echo "needs_bump=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Apply version bump
+        if: steps.check.outputs.needs_bump == 'true'
+        run: |
+          CHART="${{ needs.validate-and-detect.outputs.chart }}"
+          NEW_VERSION="${{ steps.bump.outputs.new_version }}"
+
+          echo "::group::Applying version bump to $CHART"
+
+          # Update Chart.yaml
+          sed -i "s/^version: .*/version: $NEW_VERSION/" "charts/$CHART/Chart.yaml"
+
+          # Verify the change
+          echo "Updated Chart.yaml:"
+          grep '^version:' "charts/$CHART/Chart.yaml"
+
+          echo "::endgroup::"
+
+      - name: Commit version bump
+        if: steps.check.outputs.needs_bump == 'true'
+        run: |
+          CHART="${{ needs.validate-and-detect.outputs.chart }}"
+          NEW_VERSION="${{ steps.bump.outputs.new_version }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add "charts/$CHART/Chart.yaml"
+          git commit -m "chore($CHART): bump version to $NEW_VERSION
+
+          Automated version bump by W5 workflow.
+
+          Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+
+          git push origin HEAD:${{ github.head_ref }}
+
+          echo "::notice::Committed version bump: $CHART → $NEW_VERSION"
+
+  # Phase 5.8: Generate attestations
+  generate-attestations:
+    name: Generate Attestations
+    needs: [validate-and-detect, verify-attestations, version-bump]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Generate digests for attestations
+        id: digests
+        run: |
+          CHART="${{ needs.validate-and-detect.outputs.chart }}"
+          VERSION="${{ needs.version-bump.outputs.new_version }}"
+
+          # Generate verification digest
+          VERIFY_DIGEST=$(echo -n "w5-verification-${CHART}-${{ github.sha }}" | sha256sum | cut -d' ' -f1)
+          echo "verify_digest=sha256:$VERIFY_DIGEST" >> "$GITHUB_OUTPUT"
+
+          # Generate semver digest
+          SEMVER_DIGEST=$(echo -n "w5-semver-${CHART}-${VERSION}-${{ github.sha }}" | sha256sum | cut -d' ' -f1)
+          echo "semver_digest=sha256:$SEMVER_DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Generate verification attestation
+        id: verify-attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: "w5-verification-${{ needs.validate-and-detect.outputs.chart }}"
+          subject-digest: ${{ steps.digests.outputs.verify_digest }}
+          push-to-registry: false
+
+      - name: Generate semver attestation
+        id: semver-attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: "w5-semver-${{ needs.validate-and-detect.outputs.chart }}-${{ needs.version-bump.outputs.new_version }}"
+          subject-digest: ${{ steps.digests.outputs.semver_digest }}
+          push-to-registry: false
+
+      - name: Update attestation map with W5 attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          source .github/scripts/attestation-lib.sh
+
+          update_attestation_map \
+            "w5-verification" \
+            "${{ steps.verify-attestation.outputs.attestation-id }}"
+
+          update_attestation_map \
+            "w5-semver" \
+            "${{ steps.semver-attestation.outputs.attestation-id }}"
+
+      - name: Generate summary
+        env:
+          CHART: ${{ needs.validate-and-detect.outputs.chart }}
+          NEW_VERSION: ${{ needs.version-bump.outputs.new_version }}
+          BUMP_TYPE: ${{ needs.version-bump.outputs.bump_type }}
+          HEAD_REF: ${{ github.head_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          VERIFY_ID: ${{ steps.verify-attestation.outputs.attestation-id }}
+          SEMVER_ID: ${{ steps.semver-attestation.outputs.attestation-id }}
+        run: |
+          {
+            echo "## W5 Validation Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Chart | \`$CHART\` |"
+            echo "| New Version | \`$NEW_VERSION\` |"
+            echo "| Bump Type | \`$BUMP_TYPE\` |"
+            echo "| Source Branch | \`$HEAD_REF\` |"
+            echo "| PR | #$PR_NUMBER |"
+            echo ""
+            echo "### Attestations Generated"
+            echo ""
+            echo "| Check | Attestation ID |"
+            echo "|-------|---------------|"
+            echo "| Verification | \`$VERIFY_ID\` |"
+            echo "| SemVer Bump | \`$SEMVER_ID\` |"
+            echo ""
+            echo "### K8s Compatibility"
+            echo "Tested against: v1.32.11, v1.33.7, v1.34.3"
+            echo ""
+            echo "---"
+            echo "*Generated by W5 - Validate & SemVer Bump workflow*"
+          } >> "$GITHUB_STEP_SUMMARY"

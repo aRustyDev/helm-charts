@@ -6,6 +6,19 @@
 
 ---
 
+## Relevant Skills
+
+Load these skills before planning, research, or implementation:
+
+| Skill | Path | Relevance |
+|-------|------|-----------|
+| **CI/CD GitHub Actions** | `~/.claude/skills/cicd-github-actions-dev/SKILL.md` | Concurrency control, matrix jobs, branch operations, git commands in workflows |
+| **Helm Chart Development** | `~/.claude/skills/k8s-helm-charts-dev/SKILL.md` | Chart structure, detecting chart changes |
+
+**How to load**: Read the SKILL.md files at the start of implementation to access patterns and best practices.
+
+---
+
 ## Prerequisites
 
 ### Shared Components Required
@@ -573,11 +586,11 @@ The workflow design intentionally distributes checks between W1 and W5:
 | Check Type | W1 (PR → Integration) | W5 (PR → Main) | Rationale |
 |------------|:---------------------:|:--------------:|-----------|
 | Commit validation | ✓ | | Catch early, applies to all |
-| Helm lint | ✓ | | Fast, broad applicability |
+| Helm lint (`ct lint`) | ✓ | | Fast, static analysis |
 | ArtifactHub lint | ✓ | | Metadata validation |
-| K8s compatibility (matrix) | ✓ | | Catch compat issues early |
 | Changelog preview | ✓ | | Developer feedback |
 | Attestation verification | | ✓ | Requires complete chain |
+| **K8s compatibility matrix** | | ✓ | Per-chart, deploys to KinD |
 | SemVer bump | | ✓ | Per-chart versioning |
 | **Security scanning** | | ✓ | Per-chart, expensive |
 | **SBOM generation** | | ✓ | Per-chart artifact |

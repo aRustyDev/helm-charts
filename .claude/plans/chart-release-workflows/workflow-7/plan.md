@@ -6,6 +6,19 @@
 
 ---
 
+## Relevant Skills
+
+Load these skills before planning, research, or implementation:
+
+| Skill | Path | Relevance |
+|-------|------|-----------|
+| **CI/CD GitHub Actions** | `~/.claude/skills/cicd-github-actions-dev/SKILL.md` | Attestation verification, artifact handling, gh CLI patterns |
+| **Helm Chart Development** | `~/.claude/skills/k8s-helm-charts-dev/SKILL.md` | Chart packaging (`helm package`), dependencies, Chart.yaml |
+
+**How to load**: Read the SKILL.md files at the start of implementation to access patterns and best practices.
+
+---
+
 ## Prerequisites
 
 ### Shared Components Required (Build First)

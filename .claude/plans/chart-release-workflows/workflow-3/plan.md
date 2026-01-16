@@ -1,8 +1,34 @@
 # Workflow 3: Enforce Atomic Chart PRs - Phase Plan
 
+> [!WARNING]
+> **OBSOLETE**: This workflow is no longer needed in the simplified flow.
+>
+> **Original Purpose**: Validate and auto-merge PRs from `integration` branch to `integration/<chart>` branches.
+>
+> **Why Obsolete**: W2 was simplified to push directly to `integration/<chart>` and create PRs to `main`, eliminating the intermediate step that W3 was designed to handle. The `integration` branch (singular) is no longer used.
+>
+> **Replaced By**: W2 now handles the full flow (lint-test → push to integration/<chart> → create PR to main).
+>
+> **Remaining Value**: The source branch validation pattern may be useful reference for W5's validation of `integration/<chart>` → `main` PRs.
+
+---
+
 ## Overview
 **Trigger**: `pull_request` → `integration/*` branches
 **Purpose**: Validate source branch is `integration` and auto-merge valid PRs
+
+---
+
+## Relevant Skills
+
+Load these skills before planning, research, or implementation:
+
+| Skill | Path | Relevance |
+|-------|------|-----------|
+| **CI/CD GitHub Actions** | `~/.claude/skills/cicd-github-actions-dev/SKILL.md` | PR validation, auto-merge patterns, conditional workflows |
+| **GitHub App Development** | `~/.claude/skills/github-app-dev/SKILL.md` | If elevated permissions needed for auto-merge |
+
+**How to load**: Read the SKILL.md files at the start of implementation to access patterns and best practices.
 
 ---
 

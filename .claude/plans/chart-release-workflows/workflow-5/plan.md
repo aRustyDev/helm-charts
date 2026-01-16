@@ -4,6 +4,22 @@
 **Trigger**: `pull_request` → `main` branch (from `integration/<chart>` branches)
 **Purpose**: Verify attestation lineage, bump version, run per-chart checks, generate overall attestation
 
+---
+
+## Relevant Skills
+
+Load these skills before planning, research, or implementation:
+
+| Skill | Path | Relevance |
+|-------|------|-----------|
+| **CI/CD GitHub Actions** | `~/.claude/skills/cicd-github-actions-dev/SKILL.md` | Attestation actions, matrix builds for K8s testing, gh CLI patterns |
+| **Helm Chart Development** | `~/.claude/skills/k8s-helm-charts-dev/SKILL.md` | Chart.yaml versioning, ct install configuration, KinD clusters |
+| **GitHub App Development** | `~/.claude/skills/github-app-dev/SKILL.md` | If elevated permissions needed for version bump commits |
+
+**How to load**: Read the SKILL.md files at the start of implementation to access patterns and best practices.
+
+---
+
 ### Check Distribution: W5 Is the Per-Chart Gate
 
 W5 is the primary location for **per-chart specific validation** because:
@@ -15,12 +31,13 @@ W5 is the primary location for **per-chart specific validation** because:
 **Current Checks (Implemented)**:
 - Attestation chain verification
 - SemVer version bump (via release-please)
+- **K8s Compatibility Matrix Testing** (moved from W1 - deploys to KinD clusters)
 
 **Future Checks (Out of Scope for initial implementation)**:
 - Security scanning (Trivy, Kubesec)
 - SBOM generation (Syft/Anchore)
 - License compliance checking
-- Chart-specific integration tests
+- Chart-specific integration tests (beyond K8s compat)
 
 See [W2 Plan: Check Distribution Strategy](../workflow-2/plan.md#architectural-note-check-distribution-strategy) for the full breakdown.
 
@@ -29,9 +46,9 @@ See [W2 Plan: Check Distribution Strategy](../workflow-2/plan.md#architectural-n
 ## Prerequisites
 
 ### Shared Components Required (Build First)
-- [ ] `extract_attestation_map` shell function
-- [ ] `verify_attestation_chain` shell function
-- [ ] `update_attestation_map` shell function
+- [x] `extract_attestation_map` shell function (implemented in attestation-lib.sh)
+- [x] `verify_attestation_chain` shell function (implemented in attestation-lib.sh)
+- [x] `update_attestation_map` shell function (implemented in attestation-lib.sh)
 
 ### Infrastructure Required
 - [ ] `main-protection` ruleset configured
@@ -39,7 +56,7 @@ See [W2 Plan: Check Distribution Strategy](../workflow-2/plan.md#architectural-n
 - [ ] GitHub App token for pushing version bump
 
 ### Upstream Dependencies
-- [ ] Workflow 4 creates the PRs this workflow validates
+- [x] Workflow 2 creates the PRs this workflow validates (W2 pushes to `integration/<chart>` and creates PR to main)
 
 ---
 
@@ -53,8 +70,44 @@ See [W2 Plan: Check Distribution Strategy](../workflow-2/plan.md#architectural-n
 1. Create `.github/workflows/validate-semver-bump.yaml`
 2. Configure trigger for `pull_request` → `main` with path filter `charts/**`
 3. Set up permissions (contents: write, pull-requests: write, id-token: write, attestations: write)
+4. Add concurrency control to prevent race conditions on same PR
+5. Add source branch validation (must be `integration/<chart>`)
 
-**Deliverable**: Workflow triggers on PR to main with chart changes
+**Code**:
+```yaml
+name: W5 - Validate & SemVer Bump
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'charts/**'
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: w5-validate-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+```
+
+**Source Branch Validation** (add to first job):
+```bash
+# Validate PR comes from integration/<chart> branch
+HEAD_REF="${{ github.head_ref }}"
+if [[ ! "$HEAD_REF" =~ ^integration/[a-z0-9-]+$ ]]; then
+  echo "::error::PR must come from integration/<chart> branch, got: $HEAD_REF"
+  exit 1
+fi
+CHART="${HEAD_REF#integration/}"
+echo "chart=$CHART" >> "$GITHUB_OUTPUT"
+```
+
+**Deliverable**: Workflow triggers on PR to main with chart changes, validates source branch
 
 ---
 
@@ -101,6 +154,104 @@ fi
 **Gaps**:
 - Need to understand `gh attestation verify` API fully
 - May need to verify against specific artifact digests
+
+---
+
+### Phase 5.3a: K8s Compatibility Matrix Testing (Moved from W1)
+**Effort**: Medium
+**Dependencies**: Phase 5.1, Phase 5.5 (Chart Detection)
+**Status**: Moved from W1 to provide per-chart targeted testing
+
+**Rationale for Move**:
+- **Expensive operation**: Deploys to actual KinD clusters (slow)
+- **Per-chart focus**: W5 validates a single chart, making tests more targeted
+- **Resource efficiency**: Only test the specific chart being released, not all changed charts
+- **Clearer failure attribution**: Failures are directly tied to the release candidate
+
+**Architecture Decision**: W1 keeps `ct lint` (fast, broad), W5 gets `ct install` (slow, targeted).
+
+**Tasks**:
+1. Set up matrix strategy for K8s versions
+2. Create KinD cluster for each version
+3. Run `ct install` for the specific chart
+4. Generate attestation for each K8s version test
+5. Update attestation map
+
+**Code**:
+```yaml
+k8s-install-test:
+  name: k8s-install (${{ matrix.k8s_version }})
+  needs: [detect-chart]
+  runs-on: ubuntu-latest
+  strategy:
+    matrix:
+      include:
+        - k8s_version: v1.32.11
+          node_image: kindest/node:v1.32.11@sha256:5fc52d52a7b9574015299724bd68f183702956aa4a2116ae75a63cb574b35af8
+        - k8s_version: v1.33.7
+          node_image: kindest/node:v1.33.7@sha256:d26ef333bdb2cbe9862a0f7c3803ecc7b4303d8cea8e814b481b09949d353040
+        - k8s_version: v1.34.3
+          node_image: kindest/node:v1.34.3@sha256:08497ee19eace7b4b5348db5c6a1591d7752b164530a36f855cb0f2bdcbadd48
+    fail-fast: false
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Helm
+      uses: azure/setup-helm@v4
+      with:
+        version: v3.14.0
+
+    - name: Set up chart-testing
+      uses: helm/chart-testing-action@v2.8.0
+
+    - name: Create KinD cluster
+      uses: helm/kind-action@v1.13.0
+      with:
+        node_image: ${{ matrix.node_image }}
+
+    - name: Run chart-testing (install)
+      run: |
+        # Install only the specific chart for this release
+        # Note: Charts requiring external services are excluded via ct-install.yaml
+        ct install \
+          --config ct-install.yaml \
+          --charts "charts/${{ needs.detect-chart.outputs.chart }}"
+
+    - name: Generate test digest
+      id: digest
+      run: |
+        # Create a digest of the test results for attestation
+        DIGEST=$(echo -n "${{ matrix.k8s_version }}-${{ github.sha }}" | sha256sum | cut -d' ' -f1)
+        echo "digest=sha256:$DIGEST" >> "$GITHUB_OUTPUT"
+
+    - name: Generate attestation
+      id: attestation
+      uses: actions/attest-build-provenance@v2
+      with:
+        subject-name: "w5-k8s-install-${{ matrix.k8s_version }}"
+        subject-digest: ${{ steps.digest.outputs.digest }}
+        push-to-registry: false
+
+    - name: Update attestation map
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        source .github/scripts/attestation-lib.sh
+        update_attestation_map \
+          "k8s-install-${{ matrix.k8s_version }}" \
+          "${{ steps.attestation.outputs.attestation-id }}"
+```
+
+**Attestations Generated**:
+| Check | Subject Name | Notes |
+|-------|--------------|-------|
+| K8s Install (1.32) | `w5-k8s-install-v1.32.11` | Deployment test on K8s 1.32 |
+| K8s Install (1.33) | `w5-k8s-install-v1.33.7` | Deployment test on K8s 1.33 |
+| K8s Install (1.34) | `w5-k8s-install-v1.34.3` | Deployment test on K8s 1.34 |
 
 ---
 
@@ -201,34 +352,77 @@ CURRENT_VERSION=$(grep '^version:' "charts/$CHART/Chart.yaml" | awk '{print $2}'
 **Effort**: Medium
 **Dependencies**: Phase 5.5, release-please config
 
-**Tasks**:
-1. Run release-please in dry-run mode
-2. Parse output for new version
-3. Fallback: calculate patch bump if release-please fails
+**Existing Release-Please Configuration**:
 
-**Options**:
-```yaml
-# Option A: release-please action
-- uses: googleapis/release-please-action@v4
-  with:
-    dry-run: true
-    config-file: release-please-config.json
+This repo already has release-please manifest mode configured:
 
-# Option B: release-please CLI
-- run: |
-    npx release-please release-pr \
-      --dry-run \
-      --repo-url=${{ github.repository }}
+```
+release-please-config.json    # Per-chart package definitions
+.release-please-manifest.json # Version tracking per chart
 ```
 
-**Questions**:
-- [ ] Can release-please run on a non-default branch?
-- [ ] How to get just the version bump without creating PR?
-- [ ] What if release-please determines no bump needed?
+Config structure:
+```json
+{
+  "packages": {
+    "charts/<chart-name>": {
+      "release-type": "helm",
+      "package-name": "<chart-name>",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true
+    }
+  },
+  "separate-pull-requests": true
+}
+```
 
-**Gaps**:
-- release-please behavior with atomic chart PRs unclear
-- May need custom version calculation logic
+**Integration Approach**:
+
+Since release-please is designed to run on the default branch (main) and create its own PRs, W5 uses a **hybrid approach**:
+
+1. **Primary**: Parse conventional commits in the PR to determine bump type
+2. **Fallback**: Default to patch bump if no conventional commit markers found
+
+**Tasks**:
+1. Analyze commits in PR for conventional commit patterns
+2. Determine bump type: major (breaking), minor (feat), patch (fix/chore)
+3. Calculate new version based on current version + bump type
+4. Validate new version doesn't already exist (idempotent)
+
+**Code**:
+```bash
+# Get current version
+CURRENT_VERSION=$(grep '^version:' "charts/$CHART/Chart.yaml" | awk '{print $2}')
+
+# Analyze commits for bump type
+COMMITS=$(git log origin/main..HEAD --pretty=format:"%s")
+
+# Determine bump type from conventional commits
+if echo "$COMMITS" | grep -qE '^[a-z]+(\([^)]+\))?!:'; then
+  BUMP_TYPE="major"
+elif echo "$COMMITS" | grep -qE '^feat(\([^)]+\))?:'; then
+  BUMP_TYPE="minor"
+else
+  BUMP_TYPE="patch"
+fi
+
+# Calculate new version (semver increment)
+IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
+case "$BUMP_TYPE" in
+  major) NEW_VERSION="$((major + 1)).0.0" ;;
+  minor) NEW_VERSION="${major}.$((minor + 1)).0" ;;
+  patch) NEW_VERSION="${major}.${minor}.$((patch + 1))" ;;
+esac
+
+echo "Bump: $BUMP_TYPE ($CURRENT_VERSION → $NEW_VERSION)"
+```
+
+**Note**: This approach keeps W5 decoupled from release-please's PR creation flow while maintaining compatibility with the manifest tracking. When W5 bumps the version, release-please will recognize it's already released and skip that chart.
+
+**Answered Questions**:
+- [x] Can release-please run on a non-default branch? → No, it's designed for default branch only
+- [x] How to get version bump without creating PR? → Use conventional commit parsing directly
+- [x] What if no bump needed? → Always bump patch minimum (chart changes = new version)
 
 ---
 
@@ -324,14 +518,16 @@ git push origin HEAD:${{ github.head_ref }}
 
 ```
 ┌──────────────────────┐
-│ Workflow 4 creates   │
-│ PR to main           │
+│ Workflow 2 creates   │
+│ PR to main (from     │
+│ integration/<chart>) │
 └──────────┬───────────┘
            │
            ▼
 ┌──────────────────────┐
 │ Phase 5.1: Base      │
-│ Workflow             │
+│ Workflow + Source    │
+│ Branch Validation    │
 └──────────┬───────────┘
            │
            ▼
@@ -343,39 +539,70 @@ git push origin HEAD:${{ github.head_ref }}
      ┌─────┴─────┐
      ▼           ▼
 ┌─────────┐ ┌─────────────┐
-│Phase 5.3│ │Phase 5.4    │
+│Phase 5.3│ │Phase 5.5    │
 │Verify   │ │Chart        │
 │Chain    │ │Detection    │
 └────┬────┘ └──────┬──────┘
      │             │
+     │             ▼
+     │      ┌─────────────┐
+     │      │Phase 5.3a   │
+     │      │K8s Compat   │
+     │      │Matrix Test  │
+     │      └──────┬──────┘
+     │             │
      └──────┬──────┘
             ▼
 ┌──────────────────────┐
-│ Phase 5.5: Version   │
+│ Phase 5.6: Version   │
 │ Bump Determination   │
 └──────────┬───────────┘
            ▼
 ┌──────────────────────┐
-│ Phase 5.6: Apply     │
+│ Phase 5.7: Apply     │
 │ Version Bump         │
 └──────────┬───────────┘
            ▼
 ┌──────────────────────┐
-│ Phase 5.7: Generate  │
+│ Phase 5.8: Generate  │
 │ Attestations         │
+└──────────┬───────────┘
+           ▼
+┌──────────────────────┐
+│ Phase 5.9: Status    │
+│ Check Registration   │
 └──────────────────────┘
 ```
+
+**Note**: Phase 5.4 (Security Checks) is marked as FUTURE and not included in the initial implementation flow.
 
 ---
 
 ## Open Questions
 
+### Answered
+
 1. **Attestation Verification**: What does `gh attestation verify` actually check?
+   > **Answer**: `gh attestation verify` checks SLSA provenance signatures against Sigstore's public transparency log (Rekor). It verifies:
+   > - The attestation was signed by GitHub Actions
+   > - The signature is valid and not tampered
+   > - The subject (artifact) matches the attestation
+   > - The attestation was created in the expected repository
+
 2. **Token Permissions**: Can GITHUB_TOKEN push to PR branches?
+   > **Answer**: Yes, if the PR is from the same repository (not a fork) and the workflow has `contents: write` permission. For PRs from forks, elevated permissions via GitHub App token are required.
+
 3. **release-please Integration**: How to get version without creating PR?
+   > **Answer**: Release-please is designed for default branch only. W5 uses conventional commit parsing directly to determine the version bump type, then calculates the new version manually. See Phase 5.6.
+
 4. **Concurrent Runs**: How to handle multiple workflow runs on same PR?
-5. **Failed Verification**: What happens if attestation verification fails?
-6. **No Bump Needed**: What if release-please determines no version change?
+   > **Answer**: Concurrency control is configured in Phase 5.1 with `group: w5-validate-${{ github.event.pull_request.number }}` and `cancel-in-progress: false` to queue runs rather than cancel them.
+
+5. **No Bump Needed**: What if release-please determines no version change?
+   > **Answer**: Chart changes always require a version bump (minimum patch). This is enforced by W5 - if a chart is modified, it gets versioned.
+
+6. **Failed Verification**: What happens if attestation verification fails?
+   > **Answer**: Failure blocks merge entirely for security. If attestation verification fails, the workflow exits with error and the PR cannot be merged until the issue is resolved.
 
 ---
 
