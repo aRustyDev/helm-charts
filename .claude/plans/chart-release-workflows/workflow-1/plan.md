@@ -2,7 +2,21 @@
 
 ## Overview
 **Trigger**: `pull_request` → `integration` branch
-**Purpose**: Validate contributions with comprehensive checks and generate attestations
+**Purpose**: Validate contributions with **broad, fast checks** and generate attestations
+
+### Check Distribution Philosophy
+
+W1 performs **broadly applicable validation** that:
+- Applies uniformly to all charts in a PR
+- Catches issues early (before per-chart branching)
+- Runs quickly to provide fast developer feedback
+
+**Per-chart specific checks** (security scanning, SBOM generation, integration tests) belong in **W5** where:
+- Changes are isolated to a single chart
+- Expensive scans are more targeted
+- Security findings are actionable per-release
+
+See [W2 Plan: Check Distribution Strategy](../workflow-2/plan.md#architectural-note-check-distribution-strategy) for the full breakdown.
 
 ### Related Documents
 - **Workflow Spec**: [workflow-1-validate-initial-contribution.md](../workflows/workflow-1-validate-initial-contribution.md)
@@ -146,19 +160,25 @@ See [05-research-plan.md](../05-research-plan.md#31-changelog-generation-researc
 
 ---
 
-### Phase 1.6: Security Scanning Job (OUT OF SCOPE)
-**Status**: Deferred to future iteration
-**Effort**: N/A for initial implementation
+### Phase 1.6: Security Scanning Job (MOVED TO W5)
+**Status**: Intentionally placed in W5, not W1
+**Effort**: N/A for W1
 
-**Placeholder Tasks** (for future):
-1. ~~Decide on security scanning tool(s)~~
-2. ~~Implement scanning job~~
-3. ~~Configure severity thresholds~~
+**Architectural Decision**: Security scanning belongs in **W5 (PR → Main)**, not W1, because:
 
-**Notes**:
-- Security scanning is explicitly out of scope for the initial workflow implementation
-- The workflow structure will support adding security scanning as a future enhancement
-- When implemented, should integrate with attestation pattern (generate attestation for scan results)
+1. **Isolated context**: W5 validates a single chart, making security findings more actionable
+2. **Expensive operations**: Security scans are slower; running per-chart avoids redundant work
+3. **Release candidate focus**: Security attestations should be tied to the specific version being released
+4. **SBOM accuracy**: Software Bill of Materials makes more sense for isolated chart content
+
+**Future Implementation Location**: See [W2 Plan: Future Security Checks](../workflow-2/plan.md#future-security-checks-out-of-scope)
+
+**Checks to add to W5** (when implementing):
+- Trivy vulnerability scanning
+- Kubesec security analysis
+- SBOM generation (Syft/Anchore)
+- License compliance checking
+- Chart-specific integration tests
 
 ---
 

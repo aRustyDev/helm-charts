@@ -564,6 +564,54 @@ cleanup_chart_branch() {
 
 ---
 
+## Architectural Note: Check Distribution Strategy
+
+### W1 vs W5 Check Placement
+
+The workflow design intentionally distributes checks between W1 and W5:
+
+| Check Type | W1 (PR → Integration) | W5 (PR → Main) | Rationale |
+|------------|:---------------------:|:--------------:|-----------|
+| Commit validation | ✓ | | Catch early, applies to all |
+| Helm lint | ✓ | | Fast, broad applicability |
+| ArtifactHub lint | ✓ | | Metadata validation |
+| K8s compatibility (matrix) | ✓ | | Catch compat issues early |
+| Changelog preview | ✓ | | Developer feedback |
+| Attestation verification | | ✓ | Requires complete chain |
+| SemVer bump | | ✓ | Per-chart versioning |
+| **Security scanning** | | ✓ | Per-chart, expensive |
+| **SBOM generation** | | ✓ | Per-chart artifact |
+| **License compliance** | | ✓ | Per-chart analysis |
+| **Integration tests** | | ✓ | Chart-specific |
+
+**Note**: Security-related checks (marked in bold) are **OUT OF SCOPE** for initial implementation but are annotated here for future context. They belong in W5 because:
+1. They're expensive to run and benefit from isolated chart context
+2. Security findings are more actionable per-chart
+3. SBOM/attestations should be generated for the specific release candidate
+
+### Future Security Checks (Out of Scope)
+
+When implementing security checks, add to W5:
+```yaml
+# Example future additions to W5
+- name: Security scan with Trivy
+  uses: aquasecurity/trivy-action@master
+  with:
+    scan-type: 'config'
+    scan-ref: 'charts/${{ matrix.chart }}'
+
+- name: Generate SBOM
+  uses: anchore/sbom-action@v0
+  with:
+    path: 'charts/${{ matrix.chart }}'
+
+- name: Kubesec scan
+  run: |
+    helm template charts/${{ matrix.chart }} | kubesec scan -
+```
+
+---
+
 ## Architectural Note: Impact on W3/W4
 
 The updated W2 design simplifies the flow compared to the original plan:

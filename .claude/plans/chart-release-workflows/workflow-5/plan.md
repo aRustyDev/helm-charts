@@ -1,8 +1,28 @@
 # Workflow 5: Validate & SemVer Bump - Phase Plan
 
 ## Overview
-**Trigger**: `pull_request` → `main` branch (with changes to `charts/**`)
-**Purpose**: Verify attestation lineage, bump version, generate overall attestation
+**Trigger**: `pull_request` → `main` branch (from `integration/<chart>` branches)
+**Purpose**: Verify attestation lineage, bump version, run per-chart checks, generate overall attestation
+
+### Check Distribution: W5 Is the Per-Chart Gate
+
+W5 is the primary location for **per-chart specific validation** because:
+- PRs come from `integration/<chart>` branches with isolated, single-chart changes
+- Expensive checks benefit from targeted context
+- Security findings are directly actionable for the release candidate
+- Attestations generated here are tied to the specific chart version
+
+**Current Checks (Implemented)**:
+- Attestation chain verification
+- SemVer version bump (via release-please)
+
+**Future Checks (Out of Scope for initial implementation)**:
+- Security scanning (Trivy, Kubesec)
+- SBOM generation (Syft/Anchore)
+- License compliance checking
+- Chart-specific integration tests
+
+See [W2 Plan: Check Distribution Strategy](../workflow-2/plan.md#architectural-note-check-distribution-strategy) for the full breakdown.
 
 ---
 
@@ -84,7 +104,78 @@ fi
 
 ---
 
-### Phase 5.4: Chart Detection
+### Phase 5.4: Per-Chart Security Checks (FUTURE - OUT OF SCOPE)
+**Status**: Placeholder for future implementation
+**Effort**: N/A for initial implementation
+**Dependencies**: Phase 5.1
+
+**Architectural Decision**: This is where per-chart security checks belong. NOT in W1.
+
+**Rationale**:
+1. **Isolated context**: Single chart per PR means targeted scanning
+2. **Release candidate focus**: Security attestations tied to specific version
+3. **Actionable findings**: Reviewer can address issues before merge to main
+4. **SBOM accuracy**: Bill of materials reflects exact chart content
+
+**Future Implementation**:
+```yaml
+# Phase 5.4a: Security Scanning
+- name: Run Trivy vulnerability scan
+  uses: aquasecurity/trivy-action@master
+  with:
+    scan-type: 'config'
+    scan-ref: 'charts/${{ env.CHART }}'
+    format: 'sarif'
+    output: 'trivy-results.sarif'
+
+- name: Upload Trivy results
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: 'trivy-results.sarif'
+
+# Phase 5.4b: Kubesec Analysis
+- name: Run Kubesec scan
+  run: |
+    helm template charts/${{ env.CHART }} | kubesec scan - > kubesec-results.json
+    # Fail if critical issues found
+    if jq -e '.[] | select(.score < 0)' kubesec-results.json; then
+      echo "::error::Critical security issues found"
+      exit 1
+    fi
+
+# Phase 5.4c: SBOM Generation
+- name: Generate SBOM
+  uses: anchore/sbom-action@v0
+  with:
+    path: 'charts/${{ env.CHART }}'
+    format: 'spdx-json'
+    output-file: 'sbom.spdx.json'
+
+- name: Attest SBOM
+  uses: actions/attest-sbom@v2
+  with:
+    subject-path: 'charts/${{ env.CHART }}'
+    sbom-path: 'sbom.spdx.json'
+
+# Phase 5.4d: License Compliance
+- name: Check license compliance
+  run: |
+    # Scan for license issues in chart dependencies
+    # Implementation depends on chosen tool (e.g., FOSSA, Snyk, etc.)
+    echo "::notice::License compliance check placeholder"
+```
+
+**Attestations Generated** (future):
+| Check | Subject Name | Notes |
+|-------|--------------|-------|
+| Trivy scan | `w5-trivy-<chart>` | Vulnerability scan results |
+| Kubesec scan | `w5-kubesec-<chart>` | K8s security best practices |
+| SBOM | `w5-sbom-<chart>` | Software bill of materials |
+| License | `w5-license-<chart>` | License compliance |
+
+---
+
+### Phase 5.5: Chart Detection
 **Effort**: Low
 **Dependencies**: Phase 5.1
 
@@ -106,9 +197,9 @@ CURRENT_VERSION=$(grep '^version:' "charts/$CHART/Chart.yaml" | awk '{print $2}'
 
 ---
 
-### Phase 5.5: Version Bump Determination
+### Phase 5.6: Version Bump Determination
 **Effort**: Medium
-**Dependencies**: Phase 5.4, release-please config
+**Dependencies**: Phase 5.5, release-please config
 
 **Tasks**:
 1. Run release-please in dry-run mode
@@ -141,9 +232,9 @@ CURRENT_VERSION=$(grep '^version:' "charts/$CHART/Chart.yaml" | awk '{print $2}'
 
 ---
 
-### Phase 5.6: Apply Version Bump
+### Phase 5.7: Apply Version Bump
 **Effort**: Medium
-**Dependencies**: Phase 5.5, GitHub App token
+**Dependencies**: Phase 5.6, GitHub App token
 
 **Tasks**:
 1. Update Chart.yaml with new version
@@ -176,9 +267,9 @@ git push origin HEAD:${{ github.head_ref }}
 
 ---
 
-### Phase 5.7: Generate Attestations
+### Phase 5.8: Generate Attestations
 **Effort**: High
-**Dependencies**: Phase 5.3, Phase 5.6
+**Dependencies**: Phase 5.3, Phase 5.7
 
 **Tasks**:
 1. Attest the verification result
@@ -204,9 +295,9 @@ git push origin HEAD:${{ github.head_ref }}
 
 ---
 
-### Phase 5.8: Status Check Registration
+### Phase 5.9: Status Check Registration
 **Effort**: Low
-**Dependencies**: Phase 5.7
+**Dependencies**: Phase 5.8
 
 **Tasks**:
 1. Ensure workflow reports status correctly
