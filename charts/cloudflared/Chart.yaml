@@ -51,6 +51,7 @@ keywords:
   - zero-trust-network-access
   - ztna
   - warp
+  - connect-apps
 kubeVersion: '>=1.21.0-0'
 maintainers:
   - email: adam@arustydev.io
