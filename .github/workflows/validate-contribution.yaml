@@ -305,20 +305,18 @@ jobs:
           echo "# Changelog Preview" > changelog.md
           echo "" >> changelog.md
 
-          echo "::debug::Target branch: $TARGET_BRANCH"
-          echo "::debug::Commit range: origin/$TARGET_BRANCH..HEAD"
-
           for chart in $CHANGED_CHARTS; do
             echo "::group::Generating changelog for $chart"
             echo "## $chart" >> changelog.md
             echo "" >> changelog.md
 
             # Generate changelog for this chart only (compare against target branch, not tags)
+            # Capture stderr separately to avoid warnings in output
             CHANGELOG_OUTPUT=$(git-cliff \
               --config .github/cliff.toml \
               --include-path "charts/$chart/**/*" \
               "origin/$TARGET_BRANCH..HEAD" \
-              --strip header 2>&1) || true
+              --strip header 2>/dev/null) || true
 
             if [[ -n "$CHANGELOG_OUTPUT" && ! "$CHANGELOG_OUTPUT" =~ ^[[:space:]]*$ ]]; then
               echo "$CHANGELOG_OUTPUT" >> changelog.md
