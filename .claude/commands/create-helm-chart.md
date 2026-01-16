@@ -16,10 +16,15 @@ This skill provides:
 - **assets/Chart.yaml.template**: Chart metadata with kubeVersion, annotations, dependencies
 - **assets/values.yaml.template**: Complete values structure including security, probes, autoscaling
 - **assets/patterns/**: External service configuration patterns (database, search, messaging)
+- **assets/templates/**: Workflow templates (research-summary, high-level-plan, phase-plan, issue-structure)
 - **scripts/validate-chart.sh**: Validation script for structure, security, and best practices
 - **references/chart-structure.md**: Detailed chart organization reference
 - **references/chart-complexity.md**: Chart complexity classification (Simple/Standard/Complex/Operator)
 - **references/research-strategy.md**: How to find existing charts and gather configuration details
+- **references/extend-contribute-strategy.md**: Fork vs copy-local decision, contribution workflow
+- **references/research-phase-workflow.md**: Structured research with approval gates
+- **references/planning-phase-workflow.md**: High-level and phase planning with issue mapping
+- **references/implementation-workflow.md**: Implementation with sanity checks and review stops
 
 ## Repository Context
 
@@ -36,6 +41,25 @@ Charts are tested with **chart-testing**. See [ADR-007](../docs/src/adr/007-sepa
 - `ct.yaml` - Lint configuration (all charts)
 - `ct-install.yaml` - Install configuration (excludes external-service charts)
 - `validate-maintainers: true` - Maintainer GitHub usernames must be valid
+
+---
+
+## Workflow Selection
+
+Before starting, determine the appropriate workflow based on complexity:
+
+| Chart Complexity | Official Chart Exists | Workflow |
+|------------------|----------------------|----------|
+| Simple/Standard | No | **Fast Path** - Quick research → Create → Validate → PR |
+| Simple/Standard | Yes (use as-is) | **Skip** - Use existing chart directly |
+| Complex/Operator | No | **Full Workflow** - Research → Plan → Approve → Implement |
+| Any | Yes (extend) | **Full Workflow** with extend/contribute strategy |
+
+**Fast Path**: Skip formal research plan, planning phase, and approval gates. Proceed directly to worktree and implementation.
+
+**Full Workflow**: Use when complexity is high, user requests planning, or extending existing charts.
+
+> **Details**: See skill's `references/research-strategy.md` for workflow selection criteria.
 
 ---
 
@@ -75,7 +99,10 @@ Charts are tested with **chart-testing**. See [ADR-007](../docs/src/adr/007-sepa
 Before creating from scratch, check if the project maintains an official chart:
 
 1. **Check for official Helm chart** in project's GitHub or Artifact Hub
-2. **If exists**: Review their patterns, decide whether to adapt or create new
+2. **If official chart exists**: Ask user how to proceed:
+   - **Skip** - Use the official chart, don't create a duplicate
+   - **Extend and Contribute** - Create compatible chart with improvements to contribute back
+   - **Create Independent** - Create our own chart with different patterns
 3. **If documentation scraping fails**: Use alternative research methods
 
 > **Details**: See skill's `references/research-strategy.md` for commands, fallback strategies, and information gathering checklist.
@@ -88,6 +115,47 @@ gh search repos "<project> helm" --owner <org>
 # Search Artifact Hub
 curl -s "https://artifacthub.io/api/v1/packages/search?ts_query_web=<project>&kind=0" | jq '.packages[].name'
 ```
+
+**Extend and Contribute Pattern:**
+
+When extending an existing chart, decide: **fork upstream repo** vs **copy locally**.
+
+| Approach | Best For | Contribution Path |
+|----------|----------|-------------------|
+| Fork repo | Dedicated chart repos, immediate contribution | Direct PRs |
+| Copy locally | Monorepos, learning, uncertain timeline | Manual diff/patch |
+
+Key steps:
+1. Review upstream chart structure and values schema
+2. Identify improvement opportunities (HPA, PDB, probes, kubeVersion)
+3. Maintain compatibility for easier contribution
+4. Document differences in README/PR
+
+> **Details**: See skill's `references/extend-contribute-strategy.md` for decision tree, compatibility checklist, and contribution workflow.
+
+### Phase 1.8: Planning (Full Workflow Only)
+
+**Skip for Fast Path.** For Complex/Operator charts or when extending:
+
+1. **Document research findings** using skill template:
+   ```bash
+   # Create plan directory
+   mkdir -p .claude/plans/<chart-name>-chart
+   # Copy and fill out research summary template
+   ```
+
+2. **Create high-level plan** with target features, dependencies, CI handling
+
+3. **Get approval** (for complex applications):
+   - Present research summary and high-level plan
+   - Confirm approach before implementation
+   - Resolve open questions
+
+4. **Map to issues** (optional, for multi-phase development):
+   - Parent issue: Overall chart
+   - Child issues: Per-phase (MVP, probes, security, etc.)
+
+> **Details**: See skill's `references/planning-phase-workflow.md` and `assets/templates/`
 
 ### Phase 2: Setup Git Worktree
 
@@ -222,9 +290,13 @@ ct lint --charts charts/<chart-name> --config ct.yaml
 
 ### Phase 3.6: Commit and Create PR
 
+**For Full Workflow**: Create draft PR immediately when starting implementation to enable early feedback.
+
 **Detect mode from user instructions:**
 - Keywords like "local", "don't push", "no PR", "local feature-branch" → Local-only mode
 - Default → Push and create PR
+
+> **Details**: See skill's `references/implementation-workflow.md` for draft PR pattern, sanity checks, and external review stops.
 
 **Local-only mode:**
 ```bash
@@ -253,6 +325,13 @@ gh pr create --title "feat(<chart-name>): MVP helm chart" \
 ### Phase 4: Progressive Enhancement PRs
 
 After MVP PR is merged, create subsequent PRs for each enhancement. **Fix any bugs before starting new features.**
+
+**If using issues** (recommended for Full Workflow):
+- Assign yourself to the phase issue before starting
+- Link PR to issue with `Closes #<number>`
+- Update parent issue progress
+
+> **Details**: See skill's `assets/templates/issue-structure.md` for issue hierarchy and linking.
 
 **Suggested progression** (fundamentals first):
 
@@ -347,8 +426,10 @@ Charts that typically need exclusion:
 
 ## Best Practices
 
+- **Choose appropriate workflow** - Fast Path for simple, Full Workflow for complex
 - **Always work in worktrees** - keeps main repo clean
 - **Load skill first** - comprehensive guidance available
+- **Create draft PR early** (Full Workflow) - enables feedback
 - **One feature per PR** - easier to review and rollback
 - **Fix bugs immediately** - don't accumulate tech debt
 - **MVP first** - get something working before optimizing
@@ -356,3 +437,4 @@ Charts that typically need exclusion:
 - **Use helm-docs comments** - `# --` prefix for all values
 - **Validate with skill script** - catches security and best practice issues
 - **Reference skill templates** - consistent structure across charts
+- **Document research and plans** (Full Workflow) - enables approval and tracking
