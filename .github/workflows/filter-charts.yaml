@@ -10,7 +10,7 @@
 #   - process-charts: Create/update per-chart branches and PRs to main
 #
 # Each processed chart gets:
-#   - A dedicated `integration/<chart>` branch
+#   - A dedicated `charts/<chart>` branch
 #   - A PR to main with the attestation map from the source PR
 #
 # See: .claude/plans/chart-release-workflows/workflow-2/plan.md
@@ -179,7 +179,7 @@ jobs:
           ATTESTATION_MAP: ${{ needs.detect-changes.outputs.attestation_map }}
         run: |
           set -e
-          BRANCH="integration/$CHART"
+          BRANCH="charts/$CHART"
 
           echo "::group::Branch operations for $CHART"
 
@@ -262,7 +262,7 @@ jobs:
           ATTESTATION_MAP: ${{ needs.detect-changes.outputs.attestation_map }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
-          BRANCH="integration/$CHART"
+          BRANCH="charts/$CHART"
 
           echo "::group::PR operations for $CHART"
 
@@ -416,7 +416,7 @@ jobs:
           echo "|-------|--------|--------|" >> $GITHUB_STEP_SUMMARY
 
           for chart in $CHARTS; do
-            echo "| $chart | \`integration/$chart\` | :white_check_mark: Processed |" >> $GITHUB_STEP_SUMMARY
+            echo "| $chart | \`charts/$chart\` | :white_check_mark: Processed |" >> $GITHUB_STEP_SUMMARY
           done
           echo "" >> $GITHUB_STEP_SUMMARY
 
