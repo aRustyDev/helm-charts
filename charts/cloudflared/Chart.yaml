@@ -50,6 +50,7 @@ keywords:
   - tunnel
   - zero-trust-network-access
   - ztna
+  - warp
 kubeVersion: '>=1.21.0-0'
 maintainers:
   - email: adam@arustydev.io
