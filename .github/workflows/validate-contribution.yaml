@@ -73,24 +73,14 @@ jobs:
           fi
 
   #############################################################################
-  # Lint and Test Charts (Matrix: K8s Versions)
+  # Lint Charts (Static Analysis)
+  # NOTE: ct install (K8s deployment tests) moved to W5 for per-chart testing
   #############################################################################
-  lint-test:
-    name: lint-test (${{ matrix.k8s_version }})
+  lint:
+    name: lint
     needs: detect-changes
     if: needs.detect-changes.outputs.charts_changed == 'true' || github.event.inputs.test_all == true
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          # SHA-pinned images from https://github.com/kubernetes-sigs/kind/releases
-          - k8s_version: v1.32.11
-            node_image: kindest/node:v1.32.11@sha256:5fc52d52a7b9574015299724bd68f183702956aa4a2116ae75a63cb574b35af8
-          - k8s_version: v1.33.7
-            node_image: kindest/node:v1.33.7@sha256:d26ef333bdb2cbe9862a0f7c3803ecc7b4303d8cea8e814b481b09949d353040
-          - k8s_version: v1.34.3
-            node_image: kindest/node:v1.34.3@sha256:08497ee19eace7b4b5348db5c6a1591d7752b164530a36f855cb0f2bdcbadd48
-      fail-fast: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -119,33 +109,18 @@ jobs:
             ct lint --config ct.yaml --target-branch "$TARGET_BRANCH"
           fi
 
-      - name: Create KinD cluster
-        uses: helm/kind-action@v1.13.0
-        with:
-          node_image: ${{ matrix.node_image }}
-
-      - name: Run chart-testing (install)
-        id: install
-        run: |
-          # Use ct-install.yaml which excludes charts that need external services
-          if [[ "${{ github.event.inputs.test_all }}" == "true" ]]; then
-            ct install --config ct-install.yaml --all --target-branch "$TARGET_BRANCH"
-          else
-            ct install --config ct-install.yaml --target-branch "$TARGET_BRANCH"
-          fi
-
-      - name: Generate test digest
+      - name: Generate lint digest
         id: digest
         run: |
-          # Create a digest of the test results for attestation
-          DIGEST=$(echo -n "${{ matrix.k8s_version }}-${{ github.sha }}" | sha256sum | cut -d' ' -f1)
+          # Create a digest of the lint results for attestation
+          DIGEST=$(echo -n "lint-${{ github.sha }}" | sha256sum | cut -d' ' -f1)
           echo "digest=sha256:$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Generate attestation
         id: attestation
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: "w1-lint-test-${{ matrix.k8s_version }}"
+          subject-name: "w1-lint"
           subject-digest: ${{ steps.digest.outputs.digest }}
           push-to-registry: false
 
@@ -157,7 +132,7 @@ jobs:
         run: |
           source .github/scripts/attestation-lib.sh
           update_attestation_map \
-            "lint-test-${{ matrix.k8s_version }}" \
+            "lint" \
             "${{ steps.attestation.outputs.attestation-id }}"
 
   #############################################################################
@@ -365,16 +340,13 @@ jobs:
   #############################################################################
   # Skip jobs for no-change scenarios (satisfies required checks)
   #############################################################################
-  lint-test-skip:
-    name: lint-test (${{ matrix.k8s_version }})
+  lint-skip:
+    name: lint
     needs: detect-changes
     if: needs.detect-changes.outputs.charts_changed != 'true' && github.event.inputs.test_all != true
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        k8s_version: [v1.32.11, v1.33.7, v1.34.3]
     steps:
-      - run: echo "No chart changes detected, skipping lint-test"
+      - run: echo "No chart changes detected, skipping lint"
 
   artifacthub-lint-skip:
     name: artifacthub-lint

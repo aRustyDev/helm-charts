@@ -396,6 +396,53 @@ log_attestation() {
     echo "::endgroup::"
 }
 
+#######################################
+# Extract changelog entries for a specific version
+#
+# Reads the CHANGELOG.md file for a chart and extracts the section
+# for the specified version. Expects Keep-a-Changelog format.
+#
+# Arguments:
+#   $1 - chart: Chart name
+#   $2 - version: Version to extract (e.g., "1.0.0")
+#
+# Outputs:
+#   Changelog content for the specified version, or fallback message
+#######################################
+extract_changelog_for_version() {
+    local chart="$1"
+    local version="$2"
+    local changelog_file="charts/$chart/CHANGELOG.md"
+
+    if [[ -z "$chart" || -z "$version" ]]; then
+        echo "No changelog available (missing chart or version)"
+        return 0
+    fi
+
+    if [[ ! -f "$changelog_file" ]]; then
+        echo "No changelog available for $chart"
+        return 0
+    fi
+
+    # Extract section from ## [VERSION] until next ## [ or end of file
+    # Using awk to handle the Keep-a-Changelog format
+    local changelog_content
+    changelog_content=$(awk -v ver="$version" '
+        /^## \[/ {
+            if (found) exit
+            if ($0 ~ "\\[" ver "\\]") found=1
+        }
+        found { print }
+    ' "$changelog_file")
+
+    if [[ -z "$changelog_content" ]]; then
+        echo "No changelog entries found for version $version"
+        return 0
+    fi
+
+    echo "$changelog_content"
+}
+
 # Export functions for use in subshells
 export -f update_attestation_map
 export -f extract_attestation_map
@@ -406,3 +453,4 @@ export -f validate_source_branch
 export -f get_source_pr
 export -f generate_subject_digest
 export -f log_attestation
+export -f extract_changelog_for_version
