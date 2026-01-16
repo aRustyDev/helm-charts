@@ -36,7 +36,7 @@ annotations:
     url: https://keybase.io/communitycharts/pgp_keys.asc
 apiVersion: v2
 appVersion: 2025.11.1
-description: A Helm chart for cloudflare tunnel
+description: A Helm chart for Cloudflare Tunnel (cloudflared)
 home: https://github.com/cloudflare/cloudflared
 icon: https://raw.githubusercontent.com/cloudflare/color/refs/heads/master/static/thinking/logo.png
 keywords:
