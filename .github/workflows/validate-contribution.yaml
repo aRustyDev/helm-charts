@@ -292,9 +292,13 @@ jobs:
         id: changelog
         env:
           CHANGED_CHARTS: ${{ needs.detect-changes.outputs.changed_charts }}
+          TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
         run: |
           echo "# Changelog Preview" > changelog.md
           echo "" >> changelog.md
+
+          echo "::debug::Target branch: $TARGET_BRANCH"
+          echo "::debug::Commit range: origin/$TARGET_BRANCH..HEAD"
 
           for chart in $CHANGED_CHARTS; do
             echo "::group::Generating changelog for $chart"
@@ -302,11 +306,17 @@ jobs:
             echo "" >> changelog.md
 
             # Generate changelog for this chart only (compare against target branch, not tags)
-            git cliff \
+            CHANGELOG_OUTPUT=$(git cliff \
               --config .github/cliff.toml \
               --include-path "charts/$chart/**/*" \
               "origin/$TARGET_BRANCH..HEAD" \
-              --strip header >> changelog.md 2>/dev/null || echo "_No conventional commits found for this chart._" >> changelog.md
+              --strip header 2>&1) || true
+
+            if [[ -n "$CHANGELOG_OUTPUT" && ! "$CHANGELOG_OUTPUT" =~ ^[[:space:]]*$ ]]; then
+              echo "$CHANGELOG_OUTPUT" >> changelog.md
+            else
+              echo "_No conventional commits found for this chart._" >> changelog.md
+            fi
 
             echo "" >> changelog.md
             echo "::endgroup::"
