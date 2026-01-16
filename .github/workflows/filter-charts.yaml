@@ -23,6 +23,13 @@ on:
       - integration
     paths:
       - 'charts/**'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (no PR creation)'
+        required: false
+        default: false
+        type: boolean
 
 # Permissions required for branch operations, PR creation, and attestations
 permissions:
@@ -218,9 +225,7 @@ jobs:
           # Create commit message with source PR reference
           COMMIT_MSG="chore($CHART): sync from integration"
           if [[ -n "$SOURCE_PR" ]]; then
-            COMMIT_MSG="$COMMIT_MSG
-
-Source-PR: #$SOURCE_PR"
+            COMMIT_MSG="${COMMIT_MSG}"$'\n\n'"Source-PR: #${SOURCE_PR}"
           fi
 
           git commit -m "$COMMIT_MSG"
