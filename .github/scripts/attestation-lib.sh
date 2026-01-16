@@ -76,19 +76,30 @@ update_attestation_map() {
 
         # Build new body
         local new_body
-        if echo "$body" | grep -q "$ATTESTATION_MAP_START"; then
-            # Replace existing map
-            new_body=$(echo "$body" | sed "/$ATTESTATION_MAP_START/,/$ATTESTATION_MAP_END/c\\
-$ATTESTATION_MAP_START\\
-$updated_map\\
-$ATTESTATION_MAP_END")
+        if echo "$body" | grep -qF "<!-- ATTESTATION_MAP"; then
+            # Replace existing map using awk for robustness
+            new_body=$(echo "$body" | awk -v map="$updated_map" '
+                /<!-- ATTESTATION_MAP/,/-->/ {
+                    if (/<!-- ATTESTATION_MAP/) {
+                        print "<!-- ATTESTATION_MAP"
+                        print map
+                        next
+                    }
+                    if (/-->/) {
+                        print "-->"
+                        next
+                    }
+                    next
+                }
+                { print }
+            ')
         else
             # Append new map
             new_body="$body
 
-$ATTESTATION_MAP_START
+<!-- ATTESTATION_MAP
 $updated_map
-$ATTESTATION_MAP_END"
+-->"
         fi
 
         # Update PR
@@ -149,9 +160,13 @@ extract_attestation_map_from_body() {
         return 0
     fi
 
-    # Extract content between markers
+    # Extract content between markers using awk for robustness
     local map_content
-    map_content=$(echo "$body" | sed -n "/$ATTESTATION_MAP_START/,/$ATTESTATION_MAP_END/p" | grep -v "^<!--" | grep -v "^-->" | tr -d '\n' | xargs)
+    map_content=$(echo "$body" | awk '
+        /<!-- ATTESTATION_MAP/,/-->/ {
+            if (!/<!-- ATTESTATION_MAP/ && !/-->/) print
+        }
+    ' | tr -d '\n' | xargs)
 
     if [[ -z "$map_content" ]]; then
         echo '{}'
@@ -162,7 +177,7 @@ extract_attestation_map_from_body() {
     if echo "$map_content" | jq -e . >/dev/null 2>&1; then
         echo "$map_content"
     else
-        echo "::warning::Invalid JSON in attestation map, returning empty"
+        echo "::warning::Invalid JSON in attestation map, returning empty" >&2
         echo '{}'
     fi
 }
@@ -260,9 +275,9 @@ detect_changed_charts() {
         xargs)
 
     if [[ -z "$charts" ]]; then
-        echo "::notice::No chart changes detected in range: $range"
+        echo "::notice::No chart changes detected in range: $range" >&2
     else
-        echo "::notice::Changed charts: $charts"
+        echo "::notice::Changed charts: $charts" >&2
     fi
 
     echo "$charts"

@@ -16,9 +16,9 @@ annotations:
   artifacthub.io/license: Apache-2.0
   artifacthub.io/links: |
     - name: Chart Source
-      url: https://github.com/community-charts/helm-charts
-    - name: Chart Usage Page
-      url: https://community-charts.github.io/docs/charts/cloudflared/usage
+      url: https://github.com/aRustyDev/helm-charts
+    - name: Chart Documentation
+      url: https://charts.arusty.dev/cloudflared/
     - name: Upstream Project
       url: https://github.com/cloudflare/cloudflared
     - name: Official Documentation
@@ -49,6 +49,7 @@ keywords:
   - argo
   - tunnel
   - zero-trust-network-access
+  - ztna
 kubeVersion: '>=1.21.0-0'
 maintainers:
   - email: adam@arustydev.io

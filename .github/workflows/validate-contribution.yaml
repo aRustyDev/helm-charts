@@ -215,7 +215,7 @@ jobs:
         id: commitlint
         uses: wagoid/commitlint-github-action@v6
         with:
-          configFile: commitlint.config.js
+          configFile: commitlint.config.mjs
 
       - name: Generate validation digest
         id: digest
@@ -257,16 +257,25 @@ jobs:
           fetch-depth: 0
 
       - name: Install git-cliff
-        uses: orhun/git-cliff-action@v4
-        with:
-          args: --version
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Get latest version
+          GIT_CLIFF_VERSION=$(gh api repos/orhun/git-cliff/releases/latest --jq '.tag_name' | sed 's/^v//')
+          if [ -z "$GIT_CLIFF_VERSION" ] || [ "$GIT_CLIFF_VERSION" = "null" ]; then
+            echo "Failed to get git-cliff version, using fallback"
+            GIT_CLIFF_VERSION="2.7.0"
+          fi
+          echo "Installing git-cliff v${GIT_CLIFF_VERSION}"
+          curl -sSL "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar xz
+          sudo mv git-cliff-${GIT_CLIFF_VERSION}/git-cliff /usr/local/bin/
+          git-cliff --version
 
       - name: Generate changelogs for changed charts
         id: changelog
         env:
           CHANGED_CHARTS: ${{ needs.detect-changes.outputs.changed_charts }}
+          TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
         run: |
           echo "# Changelog Preview" > changelog.md
           echo "" >> changelog.md
@@ -276,12 +285,19 @@ jobs:
             echo "## $chart" >> changelog.md
             echo "" >> changelog.md
 
-            # Generate changelog for this chart only
-            git cliff \
+            # Generate changelog for this chart only (compare against target branch, not tags)
+            # Capture stderr separately to avoid warnings in output
+            CHANGELOG_OUTPUT=$(git-cliff \
               --config .github/cliff.toml \
               --include-path "charts/$chart/**/*" \
-              --unreleased \
-              --strip header >> changelog.md 2>/dev/null || echo "_No conventional commits found for this chart._" >> changelog.md
+              "origin/$TARGET_BRANCH..HEAD" \
+              --strip header 2>/dev/null) || true
+
+            if [[ -n "$CHANGELOG_OUTPUT" && ! "$CHANGELOG_OUTPUT" =~ ^[[:space:]]*$ ]]; then
+              echo "$CHANGELOG_OUTPUT" >> changelog.md
+            else
+              echo "_No conventional commits found for this chart._" >> changelog.md
+            fi
 
             echo "" >> changelog.md
             echo "::endgroup::"
