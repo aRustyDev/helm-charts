@@ -2,7 +2,34 @@
 
 ## Overview
 **Trigger**: `pull_request` → `integration` branch
-**Purpose**: Validate contributions with comprehensive checks and generate attestations
+**Purpose**: Validate contributions with **broad, fast checks** and generate attestations
+
+---
+
+## Relevant Skills
+
+Load these skills before planning, research, or implementation:
+
+| Skill | Path | Relevance |
+|-------|------|-----------|
+| **CI/CD GitHub Actions** | `~/.claude/skills/cicd-github-actions-dev/SKILL.md` | Matrix builds, caching, concurrency control, pre-commit validation |
+| **Helm Chart Development** | `~/.claude/skills/k8s-helm-charts-dev/SKILL.md` | Chart structure, ct lint configuration, values patterns |
+
+**How to load**: Read the SKILL.md files at the start of implementation to access patterns and best practices.
+
+### Check Distribution Philosophy
+
+W1 performs **broadly applicable validation** that:
+- Applies uniformly to all charts in a PR
+- Catches issues early (before per-chart branching)
+- Runs quickly to provide fast developer feedback
+
+**Per-chart specific checks** (security scanning, SBOM generation, integration tests) belong in **W5** where:
+- Changes are isolated to a single chart
+- Expensive scans are more targeted
+- Security findings are actionable per-release
+
+See [W2 Plan: Check Distribution Strategy](../workflow-2/plan.md#architectural-note-check-distribution-strategy) for the full breakdown.
 
 ### Related Documents
 - **Workflow Spec**: [workflow-1-validate-initial-contribution.md](../workflows/workflow-1-validate-initial-contribution.md)
@@ -48,24 +75,29 @@
 
 ---
 
-### Phase 1.2: Lint-Test Matrix Job
-**Effort**: Medium
+### Phase 1.2: Lint Job (Static Analysis Only)
+**Effort**: Low
 **Dependencies**: Phase 1.1, existing ct.yaml config
+**Status**: ✅ Implemented
+
+**Architecture Decision**: W1 runs `ct lint` only. `ct install` (K8s deployment tests) moved to W5.
+
+**Rationale for Split**:
+- `ct lint` is **fast** (seconds) and catches syntax/schema errors early
+- `ct install` is **slow** (minutes per K8s version) and belongs in W5 where:
+  - Single chart is being validated (more targeted)
+  - Results are tied to the specific release candidate
+  - Resource cost is justified by release context
 
 **Tasks**:
-1. Configure matrix strategy for K8s versions: `['v1.32.11', 'v1.33.7', 'v1.34.3']`
-2. Set up `helm/chart-testing-action@v2`
-3. Run `ct lint-and-install`
-4. Capture test results as artifact
+1. Set up `helm/chart-testing-action@v2`
+2. Run `ct lint` (static analysis only)
+3. Generate attestation for lint results
 
-**Questions**:
-- [ ] Do we need a KinD cluster for each K8s version?
-- [ ] Should tests run in parallel or sequential?
-- [ ] What's the timeout per K8s version test?
-
-**Gaps**:
-- Current `ct.yaml` may need updates for new branch structure
-- Need to verify K8s version availability in KinD
+**Resolved Questions**:
+- [x] Do we need a KinD cluster? **No** - lint is static analysis, no cluster needed
+- [x] Should tests run in parallel? **N/A** - lint is a single job now
+- [x] Where does K8s compat testing go? **W5** - see Phase 5.3a in W5 plan
 
 ---
 
@@ -146,19 +178,25 @@ See [05-research-plan.md](../05-research-plan.md#31-changelog-generation-researc
 
 ---
 
-### Phase 1.6: Security Scanning Job (OUT OF SCOPE)
-**Status**: Deferred to future iteration
-**Effort**: N/A for initial implementation
+### Phase 1.6: Security Scanning Job (MOVED TO W5)
+**Status**: Intentionally placed in W5, not W1
+**Effort**: N/A for W1
 
-**Placeholder Tasks** (for future):
-1. ~~Decide on security scanning tool(s)~~
-2. ~~Implement scanning job~~
-3. ~~Configure severity thresholds~~
+**Architectural Decision**: Security scanning belongs in **W5 (PR → Main)**, not W1, because:
 
-**Notes**:
-- Security scanning is explicitly out of scope for the initial workflow implementation
-- The workflow structure will support adding security scanning as a future enhancement
-- When implemented, should integrate with attestation pattern (generate attestation for scan results)
+1. **Isolated context**: W5 validates a single chart, making security findings more actionable
+2. **Expensive operations**: Security scans are slower; running per-chart avoids redundant work
+3. **Release candidate focus**: Security attestations should be tied to the specific version being released
+4. **SBOM accuracy**: Software Bill of Materials makes more sense for isolated chart content
+
+**Future Implementation Location**: See [W2 Plan: Future Security Checks](../workflow-2/plan.md#future-security-checks-out-of-scope)
+
+**Checks to add to W5** (when implementing):
+- Trivy vulnerability scanning
+- Kubesec security analysis
+- SBOM generation (Syft/Anchore)
+- License compliance checking
+- Chart-specific integration tests
 
 ---
 
@@ -175,30 +213,30 @@ See [05-research-plan.md](../05-research-plan.md#31-changelog-generation-researc
 4. Handle race conditions for parallel job updates
 
 **Resolved: Attestation Subjects**
-| Check | Subject Name |
-|-------|--------------|
-| Lint-test (K8s 1.32) | `w1-lint-test-v1.32.11` |
-| Lint-test (K8s 1.33) | `w1-lint-test-v1.33.7` |
-| Lint-test (K8s 1.34) | `w1-lint-test-v1.34.3` |
-| ArtifactHub lint | `w1-artifacthub-lint` |
-| Commit validation | `w1-commit-validation` |
-| Changelog generation | `w1-changelog` |
+| Check | Subject Name | Notes |
+|-------|--------------|-------|
+| Chart lint | `w1-lint` | Static analysis via `ct lint` |
+| ArtifactHub lint | `w1-artifacthub-lint` | Metadata validation |
+| Commit validation | `w1-commit-validation` | Conventional commits |
+| Changelog generation | `w1-changelog` | Per-chart changelog preview |
+
+**Note**: K8s compat matrix testing (`w5-k8s-install-*`) attestations are generated in W5.
 
 **Code**:
 ```yaml
 - name: Generate attestation
-  uses: actions/attest-build-provenance@v3
+  uses: actions/attest-build-provenance@v2
   id: attestation
   with:
-    subject-name: "w1-lint-test-${{ matrix.k8s_version }}"
-    subject-digest: "sha256:${{ steps.test.outputs.digest }}"
+    subject-name: "w1-lint"
+    subject-digest: "sha256:${{ steps.digest.outputs.digest }}"
     push-to-registry: false
 
 - name: Update attestation map
   run: |
     source .github/scripts/attestation-lib.sh
     update_attestation_map \
-      "lint-test-${{ matrix.k8s_version }}" \
+      "lint" \
       "${{ steps.attestation.outputs.attestation-id }}" \
       "${{ github.event.pull_request.number }}"
 ```
@@ -292,14 +330,15 @@ See [05-research-plan.md](../05-research-plan.md#31-changelog-generation-researc
 ## Open Questions
 
 ### Resolved
-- [x] **Attestation Subject**: Use check/action name (e.g., `w1-lint-test-v1.32.11`) - See Phase 1.7
+- [x] **Attestation Subject**: Use check/action name (e.g., `w1-lint`) - See Phase 1.7
 - [x] **Security Tool**: OUT OF SCOPE for initial implementation - See Phase 1.6
 - [x] **Changelog Scope**: Per-chart using git-cliff `--include-path` - See Phase 1.5
+- [x] **K8s Version Testing**: Moved to W5 (Phase 5.3a) for per-chart targeted testing
+- [x] **ct lint vs ct install split**: W1 does `ct lint` (fast), W5 does `ct install` (slow, targeted)
 
 ### Remaining
-1. **K8s Version Testing**: How long does each K8s version test take? Should we parallelize?
-2. **Race Conditions**: How to safely update PR description from parallel jobs?
-3. **ArtifactHub CLI**: Best method to install `ah` CLI in workflow?
+1. **Race Conditions**: How to safely update PR description from parallel jobs?
+2. **ArtifactHub CLI**: Best method to install `ah` CLI in workflow?
 
 ---
 
@@ -307,17 +346,18 @@ See [05-research-plan.md](../05-research-plan.md#31-changelog-generation-researc
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Parallel attestation map updates cause conflicts | High | Implement mutex/retry logic |
-| K8s version tests are slow | Medium | Consider running only latest by default |
+| Parallel attestation map updates cause conflicts | High | Implement mutex/retry logic (done in attestation-lib.sh) |
 | ArtifactHub CLI download fails | Low | Cache binary, fallback URL |
 | git-cliff config complexity | Low | Start with default, iterate |
+
+**Mitigated Risk**: K8s version tests being slow - moved to W5 where per-chart targeting makes the cost worthwhile.
 
 ---
 
 ## Success Criteria
 
-- [ ] All checks run on PR to `integration`
-- [ ] Each check produces valid GitHub Attestation
-- [ ] Attestation IDs stored in PR description in correct format
-- [ ] Failed checks block PR merge
-- [ ] Workflow completes in < 15 minutes
+- [x] All checks run on PR to `integration`
+- [x] Each check produces valid GitHub Attestation
+- [x] Attestation IDs stored in PR description in correct format
+- [ ] Failed checks block PR merge (requires ruleset configuration)
+- [x] Workflow completes quickly (< 5 minutes without K8s install tests)

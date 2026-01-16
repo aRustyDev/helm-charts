@@ -1,8 +1,37 @@
 # Workflow 4: Format Atomic Chart PRs - Phase Plan
 
+> [!WARNING]
+> **OBSOLETE**: This workflow is no longer needed in the simplified flow.
+>
+> **Original Purpose**: Create and format PRs from `integration/<chart>` to `main` after merges to `integration/<chart>`.
+>
+> **Why Obsolete**: W2 was simplified to create the PR to `main` directly as part of its flow, eliminating the need for a separate workflow to create these PRs. W2 now:
+> 1. Validates and lints the chart
+> 2. Pushes to `integration/<chart>`
+> 3. Creates the PR to `main` with proper formatting
+>
+> **Replaced By**: W2 Phase 2.6 (PR Creation) handles all PR formatting and creation.
+>
+> **Remaining Value**: The PR body template and attestation map format patterns may be useful reference for W2's PR creation step.
+
+---
+
 ## Overview
 **Trigger**: `push` → `integration/*` branches
 **Purpose**: Create PR from `integration/<chart>` to `main` with proper formatting
+
+---
+
+## Relevant Skills
+
+Load these skills before planning, research, or implementation:
+
+| Skill | Path | Relevance |
+|-------|------|-----------|
+| **CI/CD GitHub Actions** | `~/.claude/skills/cicd-github-actions-dev/SKILL.md` | PR creation, gh CLI patterns, workflow triggers |
+| **Helm Chart Development** | `~/.claude/skills/k8s-helm-charts-dev/SKILL.md` | Chart metadata extraction for PR formatting |
+
+**How to load**: Read the SKILL.md files at the start of implementation to access patterns and best practices.
 
 ---
 

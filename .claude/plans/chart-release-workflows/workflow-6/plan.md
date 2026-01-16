@@ -6,6 +6,20 @@
 
 ---
 
+## Relevant Skills
+
+Load these skills before planning, research, or implementation:
+
+| Skill | Path | Relevance |
+|-------|------|-----------|
+| **CI/CD GitHub Actions** | `~/.claude/skills/cicd-github-actions-dev/SKILL.md` | Tag creation, gh CLI patterns, PR creation |
+| **Helm Chart Development** | `~/.claude/skills/k8s-helm-charts-dev/SKILL.md` | Chart versioning, semantic version extraction |
+| **GitHub App Development** | `~/.claude/skills/github-app-dev/SKILL.md` | If elevated permissions needed for tag creation |
+
+**How to load**: Read the SKILL.md files at the start of implementation to access patterns and best practices.
+
+---
+
 ## Prerequisites
 
 ### Shared Components Required (Build First)
