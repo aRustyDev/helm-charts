@@ -10,7 +10,7 @@
 #   - process-charts: Create/update per-chart branches and PRs to main
 #
 # Each processed chart gets:
-#   - A dedicated `charts/<chart>` branch
+#   - A dedicated `promote/<chart>` branch
 #   - A PR to main with the attestation map from the source PR
 #
 # See: .claude/plans/chart-release-workflows/workflow-2/plan.md
@@ -179,7 +179,7 @@ jobs:
           ATTESTATION_MAP: ${{ needs.detect-changes.outputs.attestation_map }}
         run: |
           set -e
-          BRANCH="charts/$CHART"
+          BRANCH="promote/$CHART"
 
           echo "::group::Branch operations for $CHART"
 
@@ -189,8 +189,8 @@ jobs:
             git fetch origin "$BRANCH"
 
             # Check if we need to update
-            LOCAL_CHART_SHA=$(git rev-parse HEAD:"charts/$CHART" 2>/dev/null || echo "none")
-            REMOTE_CHART_SHA=$(git rev-parse "origin/$BRANCH:charts/$CHART" 2>/dev/null || echo "none")
+            LOCAL_CHART_SHA=$(git rev-parse HEAD:"promote/$CHART" 2>/dev/null || echo "none")
+            REMOTE_CHART_SHA=$(git rev-parse "origin/$BRANCH:promote/$CHART" 2>/dev/null || echo "none")
 
             if [[ "$LOCAL_CHART_SHA" == "$REMOTE_CHART_SHA" ]]; then
               echo "::notice::No changes to push for $CHART (already up to date)"
@@ -208,7 +208,7 @@ jobs:
           fi
 
           # Copy the chart directory from the integration branch commit
-          git checkout "${{ github.sha }}" -- "charts/$CHART/"
+          git checkout "${{ github.sha }}" -- "promote/$CHART/"
 
           # Check if there are changes to commit
           if git diff --cached --quiet && git diff --quiet; then
@@ -220,7 +220,7 @@ jobs:
           fi
 
           # Stage and commit
-          git add "charts/$CHART/"
+          git add "promote/$CHART/"
 
           # Create commit message with source PR reference
           COMMIT_MSG="chore($CHART): sync from integration"
@@ -262,7 +262,7 @@ jobs:
           ATTESTATION_MAP: ${{ needs.detect-changes.outputs.attestation_map }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
-          BRANCH="charts/$CHART"
+          BRANCH="promote/$CHART"
 
           echo "::group::PR operations for $CHART"
 
@@ -304,14 +304,12 @@ jobs:
             echo "pr_action=updated" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::Creating new PR for $CHART"
-            # Create PR
+            # Create PR (without labels - add labels manually if needed)
             NEW_PR=$(gh pr create \
               --head "$BRANCH" \
               --base "$TARGET_BRANCH" \
               --title "chore($CHART): promote to main" \
-              --body "$PR_BODY" \
-              --label "automated" \
-              --label "chart-release" 2>&1 || true)
+              --body "$PR_BODY" 2>&1 || true)
 
             # Extract PR number from URL or error
             if [[ "$NEW_PR" =~ github.com/.*/pull/([0-9]+) ]]; then
@@ -416,7 +414,7 @@ jobs:
           echo "|-------|--------|--------|" >> $GITHUB_STEP_SUMMARY
 
           for chart in $CHARTS; do
-            echo "| $chart | \`charts/$chart\` | :white_check_mark: Processed |" >> $GITHUB_STEP_SUMMARY
+            echo "| $chart | \`promote/$chart\` | :white_check_mark: Processed |" >> $GITHUB_STEP_SUMMARY
           done
           echo "" >> $GITHUB_STEP_SUMMARY
 
