@@ -306,7 +306,7 @@ jobs:
             echo "" >> changelog.md
 
             # Generate changelog for this chart only (compare against target branch, not tags)
-            CHANGELOG_OUTPUT=$(git cliff \
+            CHANGELOG_OUTPUT=$(git-cliff \
               --config .github/cliff.toml \
               --include-path "charts/$chart/**/*" \
               "origin/$TARGET_BRANCH..HEAD" \
