@@ -21,6 +21,17 @@ on:
       - main
     paths:
       - 'charts/**'
+  workflow_dispatch:
+    inputs:
+      chart:
+        description: 'Chart to release (leave empty to auto-detect)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run (skip actual publishing)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -44,6 +55,7 @@ jobs:
       has_charts: ${{ steps.detect.outputs.has_charts }}
       tags_created: ${{ steps.create-tags.outputs.tags_created }}
       tag_list: ${{ steps.create-tags.outputs.tag_list }}
+      tag_list_json: ${{ steps.create-tags.outputs.tag_list_json }}
       attestation_map: ${{ steps.source-pr.outputs.attestation_map }}
     steps:
       - name: Checkout
@@ -213,6 +225,14 @@ jobs:
           echo "tag_list=$TAG_LIST" >> "$GITHUB_OUTPUT"
           echo "skipped=$SKIPPED" >> "$GITHUB_OUTPUT"
 
+          # Create JSON array for matrix
+          if [[ -n "$TAG_LIST" ]]; then
+            TAG_LIST_JSON=$(echo "$TAG_LIST" | tr ' ' '\n' | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          else
+            TAG_LIST_JSON="[]"
+          fi
+          echo "tag_list_json=$TAG_LIST_JSON" >> "$GITHUB_OUTPUT"
+
           if [[ "$FAILED" == "true" ]]; then
             echo "::error::One or more tags failed to create"
             exit 1
@@ -229,7 +249,7 @@ jobs:
       packages: ${{ steps.package.outputs.packages }}
     strategy:
       matrix:
-        chart_version: ${{ fromJson(format('["{0}"]', join(fromJson(format('["{0}"]', replace(needs.detect-and-tag.outputs.tag_list, ' ', '","'))), '","'))) }}
+        chart_version: ${{ fromJson(needs.detect-and-tag.outputs.tag_list_json) }}
       fail-fast: false
     steps:
       - name: Parse Chart Info
@@ -326,7 +346,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        chart_version: ${{ fromJson(format('["{0}"]', join(fromJson(format('["{0}"]', replace(needs.detect-and-tag.outputs.tag_list, ' ', '","'))), '","'))) }}
+        chart_version: ${{ fromJson(needs.detect-and-tag.outputs.tag_list_json) }}
       fail-fast: false
     steps:
       - name: Parse Chart Info
