@@ -15,6 +15,9 @@ An Architecture Decision Record (ADR) captures an important architectural decisi
 | [ADR-003](./003-semantic-versioning.md) | Semantic Versioning with Release-Please | Accepted |
 | [ADR-004](./004-chart-signing.md) | Helm Chart Signing and Provenance | Accepted |
 | [ADR-005](./005-ci-workflows.md) | CI/CD Workflow Architecture | Accepted |
+| [ADR-006](./006-release-please-versioning.md) | Release-Please for Helm Chart Versioning | Accepted |
+| [ADR-007](./007-separate-ct-configs.md) | Separate Chart-Testing Configs | Accepted |
+| [ADR-008](./008-repository-dispatch-automation.md) | Repository Dispatch for Workflow Automation | Accepted |
 
 ## ADR Template
 
