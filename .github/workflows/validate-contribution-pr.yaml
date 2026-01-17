@@ -15,7 +15,7 @@
 #
 # See: .claude/plans/chart-release-workflows/workflow-1/plan.md
 
-name: W1 - Validate Contribution
+name: Validate Contribution PR
 
 on:
   pull_request:
