@@ -567,28 +567,12 @@ jobs:
     if: needs.detect-and-tag.outputs.has_charts == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Load secrets from 1Password
-        id: op-secrets
-        uses: 1password/load-secrets-action@v2
-        with:
-          export-env: false
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          X_REPO_AUTH_APP_ID: op://gh-shared/xauth/app/id
-          X_REPO_AUTH_PRIVATE_KEY: op://gh-shared/xauth/app/private-key.pem
-
-      - name: Generate GitHub App Token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
-          private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
-
       - name: Checkout Release Branch
         uses: actions/checkout@v4
         with:
           ref: release
-          token: ${{ steps.app-token.outputs.token }}
+          # Use GITHUB_TOKEN which has admin bypass on release branch
+          token: ${{ github.token }}
 
       - name: Configure Git
         run: |
