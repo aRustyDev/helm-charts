@@ -170,8 +170,8 @@ jobs:
           CHART="${{ needs.validate-and-detect.outputs.chart }}"
           echo "::group::Installing chart: $CHART on K8s ${{ matrix.k8s_version }}"
 
-          # Check if chart is excluded from install tests
-          if grep -q "^  - $CHART$" ct-install.yaml 2>/dev/null; then
+          # Check if chart is excluded from install tests (handles trailing comments)
+          if grep -qE "^  - $CHART(\s|$)" ct-install.yaml 2>/dev/null; then
             echo "::warning::Chart $CHART is excluded from install tests (requires external services)"
             echo "skipped=true" >> "$GITHUB_OUTPUT"
           else
