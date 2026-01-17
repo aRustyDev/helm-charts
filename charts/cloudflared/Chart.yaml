@@ -1,11 +1,8 @@
 annotations:
   artifacthub.io/alternativeName: cloudflare
   artifacthub.io/changes: |-
-    - kind: changed
-      description: Update cloudflare/cloudflared image version to 2025.11.1
-      links:
-        - name: Upstream Project
-          url: https://hub.docker.com/r/cloudflare/cloudflared
+    - kind: added
+      description: Add additional keywords for discoverability (ingress, private-network)
   artifacthub.io/containsSecurityUpdates: "false"
   artifacthub.io/images: |
     - name: cloudflared
