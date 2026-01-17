@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/aRustyDev/helm-charts/compare/cloudflared-v0.4.0...cloudflared-v0.5.0) (2026-01-17)
+
+
+### Features
+
+* **cloudflared:** add ztna keyword for discoverability ([#46](https://github.com/aRustyDev/helm-charts/issues/46)) ([c9d11ba](https://github.com/aRustyDev/helm-charts/commit/c9d11ba00525354c3ccc99069bccb68e71c56956))
+
+
+### Bug Fixes
+
+* **cloudflared:** update chart source links to this repository ([#61](https://github.com/aRustyDev/helm-charts/issues/61)) ([c8e90ba](https://github.com/aRustyDev/helm-charts/commit/c8e90ba30223d3576ec164a05d21f06c9f659807))
+
 ## [0.4.0](https://github.com/aRustyDev/helm-charts/compare/cloudflared-v0.3.0...cloudflared-v0.4.0) (2026-01-14)
 
 
