@@ -38,9 +38,9 @@ jobs:
           HEAD_REF="${{ github.head_ref }}"
           echo "Source branch: $HEAD_REF"
 
-          # Validate PR comes from integration/<chart> branch
-          if [[ ! "$HEAD_REF" =~ ^integration/[a-z0-9-]+$ ]]; then
-            echo "::error::PR must come from integration/<chart> branch, got: $HEAD_REF"
+          # Validate PR comes from charts/<chart> branch
+          if [[ ! "$HEAD_REF" =~ ^charts/[a-z0-9-]+$ ]]; then
+            echo "::error::PR must come from charts/<chart> branch, got: $HEAD_REF"
             echo "valid=false" >> "$GITHUB_OUTPUT"
             exit 1
           fi
@@ -52,7 +52,7 @@ jobs:
         id: detect
         run: |
           HEAD_REF="${{ github.head_ref }}"
-          CHART="${HEAD_REF#integration/}"
+          CHART="${HEAD_REF#charts/}"
           echo "chart=$CHART" >> "$GITHUB_OUTPUT"
 
           # Get current version
