@@ -22,6 +22,12 @@ Charts requiring external services are excluded from install tests but still lin
 | `validate-maintainers` | `true` | Ensures maintainer GitHub usernames are valid |
 | `check-version-increment` | `false` | Release-please handles versioning |
 
+### Labels Strategy
+Repository uses a structured labeling system for issues and PRs.
+
+- See [Labels Strategy](memory/repo-labels.md) for the full label list and usage guidelines
+- Key categories: Status (`pending`, `tagged`), Scope (`chart`, `cicd`), Kind (`bug`, `enhancement`), Flags (`automation`, `release`)
+
 ## Architecture Decision Records
 
 Full ADRs are located in `docs/src/adr/`:
