@@ -53,6 +53,7 @@ keywords:
   - warp
   - connect-apps
   - access
+  - network
 kubeVersion: '>=1.21.0-0'
 maintainers:
   - email: adam@arustydev.io
