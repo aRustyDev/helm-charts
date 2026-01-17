@@ -203,8 +203,8 @@ jobs:
             # Reset branch to track remote, then update
             git checkout -B "$BRANCH" "origin/$BRANCH"
           else
-            echo "::notice::Creating new branch: $BRANCH"
-            git checkout -b "$BRANCH"
+            echo "::notice::Creating new branch: $BRANCH from origin/main"
+            git checkout -b "$BRANCH" origin/main
           fi
 
           # Copy the chart directory from the integration branch commit
