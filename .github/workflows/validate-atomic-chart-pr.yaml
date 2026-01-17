@@ -23,8 +23,7 @@ on:
     types: [opened, synchronize, reopened, closed]
     branches:
       - main
-    paths:
-      - 'charts/**'
+    # Note: No path filter - skip jobs handle non-chart PRs to satisfy required checks
   workflow_dispatch:
     inputs:
       test_all:
@@ -525,3 +524,46 @@ jobs:
             echo "4. Create GitHub Releases"
             echo "5. Update the release branch"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ==========================================================================
+  # Skip jobs (satisfy required checks when no charts change)
+  # ==========================================================================
+  artifacthub-lint-skip:
+    name: artifacthub-lint
+    needs: validate-and-detect
+    if: needs.validate-and-detect.outputs.has_charts != 'true' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No chart changes detected, skipping ArtifactHub lint"
+
+  helm-lint-skip:
+    name: helm-lint
+    needs: validate-and-detect
+    if: needs.validate-and-detect.outputs.has_charts != 'true' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No chart changes detected, skipping Helm lint"
+
+  k8s-test-skip-v1-32:
+    name: k8s-test (v1.32.11)
+    needs: validate-and-detect
+    if: needs.validate-and-detect.outputs.has_charts != 'true' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No chart changes detected, skipping K8s v1.32.11 test"
+
+  k8s-test-skip-v1-33:
+    name: k8s-test (v1.33.7)
+    needs: validate-and-detect
+    if: needs.validate-and-detect.outputs.has_charts != 'true' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No chart changes detected, skipping K8s v1.33.7 test"
+
+  k8s-test-skip-v1-34:
+    name: k8s-test (v1.34.3)
+    needs: validate-and-detect
+    if: needs.validate-and-detect.outputs.has_charts != 'true' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No chart changes detected, skipping K8s v1.34.3 test"
