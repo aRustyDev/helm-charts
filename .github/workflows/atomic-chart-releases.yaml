@@ -1,218 +1,105 @@
+# W7 - Atomic Chart Releases
+#
+# Triggered by tag push (from W6), packages the chart and generates attestations.
+# The packaged chart is then used by W8 to publish.
+#
+# Trigger: Push of tags matching *-v[0-9]* (e.g., cloudflared-v0.4.1)
+#
+# This workflow:
+#   1. Extracts chart name and version from tag
+#   2. Validates tag matches Chart.yaml version
+#   3. Builds chart package with `helm package`
+#   4. Generates build attestation
+#   5. Uploads package artifact for W8
+#
+# See: .claude/plans/chart-release-workflows/workflow-7/plan.md
+
 name: W7 - Atomic Chart Releases
 
 on:
-  pull_request:
-    branches:
-      - release
-    types:
-      - opened
-      - synchronize
-      - reopened
+  push:
+    tags:
+      - '*-v[0-9]*'
 
 permissions:
   contents: read
-  packages: write
   id-token: write
   attestations: write
-  pull-requests: write
 
 concurrency:
-  group: w7-release-${{ github.event.pull_request.number }}
+  group: w7-release-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
-  validate-and-build:
+  package-chart:
     runs-on: ubuntu-latest
     outputs:
-      chart: ${{ steps.detect-chart.outputs.chart }}
-      version: ${{ steps.detect-chart.outputs.version }}
-      tag: ${{ steps.detect-chart.outputs.tag }}
-      package: ${{ steps.build-package.outputs.package }}
+      chart: ${{ steps.parse-tag.outputs.chart }}
+      version: ${{ steps.parse-tag.outputs.version }}
+      tag: ${{ steps.parse-tag.outputs.tag }}
+      package_name: ${{ steps.build-package.outputs.package_name }}
       digest: ${{ steps.build-package.outputs.digest }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Need full history for tag and diff operations
-
-      - name: Load secrets from 1Password
-        id: op-secrets
-        uses: 1password/load-secrets-action@v2
-        with:
-          export-env: false
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          X_REPO_AUTH_APP_ID: op://gh-shared/xauth/app/id
-          X_REPO_AUTH_PRIVATE_KEY: op://gh-shared/xauth/app/private-key.pem
-
-      - name: Generate GitHub App Token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
-          private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
-
-      # Phase 7.2: Source Branch Validation
-      - name: Validate Source Branch
+      - name: Parse Tag
+        id: parse-tag
         run: |
-          HEAD_REF="${{ github.head_ref }}"
-          if [[ "$HEAD_REF" != "main" ]]; then
-            echo "::error::Only 'main' branch can merge to 'release'"
-            echo "::error::Source branch: $HEAD_REF"
-            exit 1
-          fi
-          echo "::notice::Source branch validated: $HEAD_REF"
+          TAG="${{ github.ref_name }}"
+          echo "::notice::Processing tag: $TAG"
 
-      # Phase 7.3: Chart Detection and Validation
-      - name: Detect and Validate Chart
-        id: detect-chart
-        run: |
-          source .github/scripts/attestation-lib.sh
-
-          # Extract from PR title "release: <chart>-v<version>"
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          if [[ ! "$PR_TITLE" =~ ^release:\ ([a-z0-9-]+)-v([0-9]+\.[0-9]+\.[0-9]+.*)$ ]]; then
-            echo "::error::Invalid PR title format. Expected: 'release: <chart>-v<version>'"
-            echo "::error::Actual title: $PR_TITLE"
+          # Parse tag format: <chart>-v<version>
+          # Examples: cloudflared-v0.4.1, my-chart-v1.2.3-beta.1
+          if [[ ! "$TAG" =~ ^([a-z0-9-]+)-v([0-9]+\.[0-9]+\.[0-9]+.*)$ ]]; then
+            echo "::error::Invalid tag format: $TAG"
+            echo "::error::Expected format: <chart>-v<version> (e.g., cloudflared-v0.4.1)"
             exit 1
           fi
 
           CHART="${BASH_REMATCH[1]}"
           VERSION="${BASH_REMATCH[2]}"
-          TAG="${CHART}-v${VERSION}"
-
-          echo "::notice::PR title indicates chart: $CHART v$VERSION"
-
-          # SECURITY CHECK: Validate PR title matches actual files changed
-          # Prevents scenario where PR for chart-foo is titled as chart-bar
-          CHANGED_CHARTS=$(git diff --name-only origin/release...HEAD 2>/dev/null | grep '^charts/' | cut -d'/' -f2 | sort -u || true)
-          CHART_COUNT=$(echo "$CHANGED_CHARTS" | grep -c . || true)
-
-          if [[ "$CHART_COUNT" -eq 0 ]]; then
-            echo "::error::No chart changes detected in PR"
-            exit 1
-          fi
-
-          if [[ "$CHART_COUNT" -gt 1 ]]; then
-            echo "::error::Multiple charts changed in PR: $CHANGED_CHARTS"
-            echo "::error::Each release PR must contain exactly ONE chart"
-            exit 1
-          fi
-
-          ACTUAL_CHART=$(echo "$CHANGED_CHARTS" | head -1)
-          if [[ "$ACTUAL_CHART" != "$CHART" ]]; then
-            echo "::error::PR title mismatch!"
-            echo "::error::  Title claims: $CHART"
-            echo "::error::  Files changed: $ACTUAL_CHART"
-            echo "::error::This could indicate a mislabeled PR or attempted manipulation"
-            exit 1
-          fi
-
-          echo "::notice::Validated: PR title matches files changed ($CHART)"
-
-          # Fetch tags to ensure we have them
-          git fetch --tags
-
-          # Verify tag exists
-          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "::error::Tag $TAG does not exist"
-            echo "::error::W6 should have created this tag before opening the release PR"
-            exit 1
-          fi
-
-          echo "::notice::Validated: Tag $TAG exists"
-
-          # Verify Chart.yaml version matches PR title version
-          CHART_YAML="charts/$CHART/Chart.yaml"
-          if [[ ! -f "$CHART_YAML" ]]; then
-            echo "::error::Chart.yaml not found: $CHART_YAML"
-            exit 1
-          fi
-
-          CHART_YAML_VERSION=$(grep '^version:' "$CHART_YAML" | awk '{print $2}' | tr -d '"' | tr -d "'")
-          if [[ "$CHART_YAML_VERSION" != "$VERSION" ]]; then
-            echo "::error::Version mismatch!"
-            echo "::error::  PR title: $VERSION"
-            echo "::error::  Chart.yaml: $CHART_YAML_VERSION"
-            exit 1
-          fi
-
-          echo "::notice::Validated: Chart.yaml version matches PR title ($VERSION)"
 
           echo "chart=$CHART" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      # Phase 7.4: Tag Attestation Verification
-      - name: Verify Tag Attestations
-        id: verify-attestations
-        env:
-          GH_TOKEN: ${{ github.token }}
+          echo "::notice::Chart: $CHART"
+          echo "::notice::Version: $VERSION"
+
+      - name: Checkout Tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Validate Chart
         run: |
-          source .github/scripts/attestation-lib.sh
+          CHART="${{ steps.parse-tag.outputs.chart }}"
+          VERSION="${{ steps.parse-tag.outputs.version }}"
 
-          TAG="${{ steps.detect-chart.outputs.tag }}"
-          REPO="${{ github.repository }}"
+          CHART_YAML="charts/$CHART/Chart.yaml"
 
-          echo "::group::Fetching tag annotation"
-          # Get tag annotation
-          ANNOTATION=$(git tag -l --format='%(contents)' "$TAG")
-
-          if [[ -z "$ANNOTATION" ]]; then
-            echo "::error::Tag $TAG has no annotation"
+          # Verify chart directory exists
+          if [[ ! -d "charts/$CHART" ]]; then
+            echo "::error::Chart directory not found: charts/$CHART"
             exit 1
           fi
 
-          echo "Tag annotation:"
-          echo "$ANNOTATION"
-          echo "::endgroup::"
-
-          # Extract attestation lineage section
-          # Format: "- check_name: attestation_id"
-          ATTESTATION_SECTION=$(echo "$ANNOTATION" | sed -n '/^Attestation Lineage:/,/^$/p' | grep '^- ' || true)
-
-          if [[ -z "$ATTESTATION_SECTION" || "$ATTESTATION_SECTION" == *"No attestation data"* ]]; then
-            echo "::warning::No attestation data found in tag annotation"
-            echo "::warning::Proceeding without upstream attestation verification"
-            echo "verified_count=0" >> "$GITHUB_OUTPUT"
-            echo "attestation_ids=" >> "$GITHUB_OUTPUT"
-          else
-            VERIFIED=0
-            FAILED=0
-            ATTESTATION_IDS=""
-
-            while IFS= read -r line; do
-              # Parse "- check_name: attestation_id"
-              CHECK_NAME=$(echo "$line" | sed 's/^- //' | cut -d: -f1)
-              ATTESTATION_ID=$(echo "$line" | cut -d: -f2 | tr -d ' ')
-
-              echo "::group::Verifying: $CHECK_NAME"
-              echo "Attestation ID: $ATTESTATION_ID"
-
-              # Verify attestation exists via GitHub API
-              if gh api "/repos/$REPO/attestations/$ATTESTATION_ID" >/dev/null 2>&1; then
-                echo "::notice::Verified: $CHECK_NAME ($ATTESTATION_ID)"
-                ((VERIFIED++))
-                ATTESTATION_IDS="${ATTESTATION_IDS}${CHECK_NAME}:${ATTESTATION_ID},"
-              else
-                echo "::error::Failed to verify: $CHECK_NAME ($ATTESTATION_ID)"
-                ((FAILED++))
-              fi
-              echo "::endgroup::"
-            done <<< "$ATTESTATION_SECTION"
-
-            echo "::notice::Verification complete: $VERIFIED verified, $FAILED failed"
-
-            if [[ $FAILED -gt 0 ]]; then
-              echo "::error::Attestation verification failed"
-              exit 1
-            fi
-
-            echo "verified_count=$VERIFIED" >> "$GITHUB_OUTPUT"
-            echo "attestation_ids=$ATTESTATION_IDS" >> "$GITHUB_OUTPUT"
+          # Verify Chart.yaml exists
+          if [[ ! -f "$CHART_YAML" ]]; then
+            echo "::error::Chart.yaml not found: $CHART_YAML"
+            exit 1
           fi
 
-      # Phase 7.5: Chart Package Building
+          # Verify version matches
+          CHART_VERSION=$(grep '^version:' "$CHART_YAML" | awk '{print $2}' | tr -d '"' | tr -d "'")
+          if [[ "$CHART_VERSION" != "$VERSION" ]]; then
+            echo "::error::Version mismatch!"
+            echo "::error::  Tag version: $VERSION"
+            echo "::error::  Chart.yaml version: $CHART_VERSION"
+            exit 1
+          fi
+
+          echo "::notice::Validated: Chart.yaml version matches tag ($VERSION)"
+
       - name: Set up Helm
         uses: azure/setup-helm@v4
         with:
@@ -221,8 +108,8 @@ jobs:
       - name: Build Chart Package
         id: build-package
         run: |
-          CHART="${{ steps.detect-chart.outputs.chart }}"
-          VERSION="${{ steps.detect-chart.outputs.version }}"
+          CHART="${{ steps.parse-tag.outputs.chart }}"
+          VERSION="${{ steps.parse-tag.outputs.version }}"
 
           mkdir -p .cr-release-packages
 
@@ -230,7 +117,8 @@ jobs:
           helm package "charts/$CHART" -d .cr-release-packages/
           echo "::endgroup::"
 
-          PACKAGE_FILE=".cr-release-packages/${CHART}-${VERSION}.tgz"
+          PACKAGE_NAME="${CHART}-${VERSION}.tgz"
+          PACKAGE_FILE=".cr-release-packages/$PACKAGE_NAME"
 
           if [[ ! -f "$PACKAGE_FILE" ]]; then
             echo "::error::Package file not created: $PACKAGE_FILE"
@@ -244,142 +132,43 @@ jobs:
           echo "::notice::Digest: sha256:$DIGEST"
 
           echo "package=$PACKAGE_FILE" >> "$GITHUB_OUTPUT"
+          echo "package_name=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
           echo "digest=sha256:$DIGEST" >> "$GITHUB_OUTPUT"
-          echo "package_name=${CHART}-${VERSION}.tgz" >> "$GITHUB_OUTPUT"
 
-      # Phase 7.6: Build Attestation Generation
       - name: Generate Build Attestation
         id: build-attestation
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: ${{ steps.build-package.outputs.package }}
 
-      # Phase 7.7: Overall Attestation Manifest
-      - name: Generate Attestation Manifest
-        id: manifest
-        run: |
-          CHART="${{ steps.detect-chart.outputs.chart }}"
-          VERSION="${{ steps.detect-chart.outputs.version }}"
-          TAG="${{ steps.detect-chart.outputs.tag }}"
-          DIGEST="${{ steps.build-package.outputs.digest }}"
-          BUILD_ATTESTATION_ID="${{ steps.build-attestation.outputs.bundle-path }}"
-          UPSTREAM_ATTESTATIONS="${{ steps.verify-attestations.outputs.attestation_ids }}"
-
-          # Create manifest JSON
-          MANIFEST=$(cat <<EOF
-          {
-            "version": "1.0",
-            "stage": "release-build",
-            "chart": {
-              "name": "$CHART",
-              "version": "$VERSION",
-              "digest": "$DIGEST",
-              "tag": "$TAG"
-            },
-            "pr": ${{ github.event.pull_request.number }},
-            "commit": "${{ github.sha }}",
-            "attestations": {
-              "upstream": "$UPSTREAM_ATTESTATIONS",
-              "build": "$BUILD_ATTESTATION_ID"
-            },
-            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          }
-          EOF
-          )
-
-          echo "$MANIFEST" > attestation-manifest.json
-          echo "::notice::Generated attestation manifest"
-          cat attestation-manifest.json
-
-          echo "manifest_file=attestation-manifest.json" >> "$GITHUB_OUTPUT"
-
-      # Phase 7.8: Artifact Upload (Optional - for inspection)
       - name: Upload Chart Package
         uses: actions/upload-artifact@v4
         with:
-          name: chart-package-${{ steps.detect-chart.outputs.chart }}-${{ steps.detect-chart.outputs.version }}
-          path: |
-            ${{ steps.build-package.outputs.package }}
-            attestation-manifest.json
-          retention-days: 30
-
-      # Update PR Description with attestation summary
-      - name: Update PR Description
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          source .github/scripts/attestation-lib.sh
-
-          CHART="${{ steps.detect-chart.outputs.chart }}"
-          VERSION="${{ steps.detect-chart.outputs.version }}"
-          TAG="${{ steps.detect-chart.outputs.tag }}"
-          DIGEST="${{ steps.build-package.outputs.digest }}"
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          VERIFIED_COUNT="${{ steps.verify-attestations.outputs.verified_count }}"
-
-          # Get current PR body
-          CURRENT_BODY=$(gh pr view "$PR_NUMBER" --json body -q '.body')
-
-          # Check if we already have a W7 section
-          if echo "$CURRENT_BODY" | grep -q "### W7 Build Attestation"; then
-            echo "::notice::W7 section already exists in PR description, skipping update"
-            exit 0
-          fi
-
-          # Append W7 attestation info
-          NEW_BODY="$CURRENT_BODY
-
-          ---
-
-          ### W7 Build Attestation
-
-          | Field | Value |
-          |-------|-------|
-          | Chart | \`$CHART\` |
-          | Version | \`$VERSION\` |
-          | Tag | \`$TAG\` |
-          | Package Digest | \`$DIGEST\` |
-          | Upstream Attestations Verified | $VERIFIED_COUNT |
-          | Build Attestation | Generated |
-          | Timestamp | $(date -u +%Y-%m-%dT%H:%M:%SZ) |
-
-          <details>
-          <summary>Download Package</summary>
-
-          The chart package is available as a workflow artifact for inspection.
-          After merge, W8 will publish to the release branch and GHCR.
-
-          </details>
-
-          <!-- W7_ATTESTATION
-          ${{ steps.build-package.outputs.digest }}
-          -->"
-
-          gh pr edit "$PR_NUMBER" --body "$NEW_BODY"
-          echo "::notice::Updated PR description with W7 attestation info"
+          name: chart-package-${{ steps.parse-tag.outputs.chart }}-${{ steps.parse-tag.outputs.version }}
+          path: ${{ steps.build-package.outputs.package }}
+          retention-days: 7
 
       - name: Summary
-        if: always()
         run: |
-          echo "## W7 - Atomic Chart Releases Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          echo "### Chart Information" >> $GITHUB_STEP_SUMMARY
-          echo "- **Chart**: ${{ steps.detect-chart.outputs.chart }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version**: ${{ steps.detect-chart.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tag**: ${{ steps.detect-chart.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          echo "### Build Information" >> $GITHUB_STEP_SUMMARY
-          echo "- **Package**: ${{ steps.build-package.outputs.package_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Digest**: ${{ steps.build-package.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          echo "### Attestation" >> $GITHUB_STEP_SUMMARY
-          echo "- **Upstream Attestations Verified**: ${{ steps.verify-attestations.outputs.verified_count }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Build Attestation**: Generated" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "1. Review the build attestation and package" >> $GITHUB_STEP_SUMMARY
-          echo "2. Merge this PR to trigger W8 (publish to GHCR and release branch)" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## W7 - Atomic Chart Releases Summary"
+            echo ""
+            echo "### Chart Information"
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Chart** | \`${{ steps.parse-tag.outputs.chart }}\` |"
+            echo "| **Version** | \`${{ steps.parse-tag.outputs.version }}\` |"
+            echo "| **Tag** | \`${{ steps.parse-tag.outputs.tag }}\` |"
+            echo "| **Package** | \`${{ steps.build-package.outputs.package_name }}\` |"
+            echo "| **Digest** | \`${{ steps.build-package.outputs.digest }}\` |"
+            echo ""
+            echo "### Build Attestation"
+            echo "- Attestation generated via \`actions/attest-build-provenance\`"
+            echo "- Bundle path: \`${{ steps.build-attestation.outputs.bundle-path }}\`"
+            echo ""
+            echo "### Next Steps"
+            echo "W8 will automatically:"
+            echo "1. Publish to GHCR (OCI registry)"
+            echo "2. Create GitHub Release"
+            echo "3. Update Helm repository index on release branch"
+          } >> "$GITHUB_STEP_SUMMARY"
