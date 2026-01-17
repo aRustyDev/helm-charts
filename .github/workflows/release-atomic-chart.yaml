@@ -21,17 +21,6 @@ on:
       - main
     paths:
       - 'charts/**'
-  workflow_dispatch:
-    inputs:
-      chart:
-        description: 'Chart to release (leave empty to auto-detect)'
-        required: false
-        type: string
-      dry_run:
-        description: 'Dry run (skip actual publishing)'
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: write
