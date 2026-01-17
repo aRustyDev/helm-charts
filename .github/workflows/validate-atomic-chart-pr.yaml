@@ -227,13 +227,21 @@ jobs:
           fi
           echo "::endgroup::"
 
+      - name: Generate Test Digest
+        id: digest
+        if: success()
+        run: |
+          # Generate proper SHA256 digest for attestation
+          DIGEST=$(echo -n "k8s-test-${{ matrix.k8s_version }}-${{ github.sha }}-${{ github.run_id }}" | sha256sum | cut -d' ' -f1)
+          echo "digest=sha256:$DIGEST" >> "$GITHUB_OUTPUT"
+
       - name: Generate Test Attestation
         id: test-attestation
         if: success()
         uses: actions/attest-build-provenance@v2
         with:
           subject-name: "k8s-test-${{ matrix.k8s_version }}"
-          subject-digest: "sha256:${{ github.sha }}"
+          subject-digest: ${{ steps.digest.outputs.digest }}
           push-to-registry: false
 
   # Phase 5.6: Version bump and changelog generation
