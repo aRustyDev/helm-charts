@@ -55,6 +55,8 @@ keywords:
   - access
   - network
   - connectivity
+  - ingress
+  - private-network
 kubeVersion: '>=1.21.0-0'
 maintainers:
   - email: adam@arustydev.io
@@ -65,4 +67,4 @@ sources:
   - https://github.com/aRustyDev/helm-charts
   - https://github.com/cloudflare/cloudflared
 type: application
-version: 0.4.1
+version: 0.4.2

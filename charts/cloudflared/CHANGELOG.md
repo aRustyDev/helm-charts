@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.2] - 2026-01-17
+
+### Changed
+- chore(cloudflared): sync from integration
+
 ## [0.4.0](https://github.com/aRustyDev/helm-charts/compare/cloudflared-v0.3.0...cloudflared-v0.4.0) (2026-01-14)
 
 
