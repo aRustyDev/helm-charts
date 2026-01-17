@@ -15,7 +15,7 @@
 #
 # See: .claude/plans/chart-release-workflows/workflow-2/plan.md
 
-name: W2 - Filter Charts
+name: Create Atomic Chart PR
 
 on:
   push:
