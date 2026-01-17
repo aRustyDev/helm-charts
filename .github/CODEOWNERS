@@ -1,0 +1,19 @@
+# CODEOWNERS - Defines trusted contributors for auto-merge
+#
+# Contributors listed here with verified (signed) commits will have their
+# PRs to the integration branch automatically merged after validation passes.
+#
+# See ADR-009 for the auto-merge policy.
+
+# Default owners for all files
+* @aRustyDev
+
+# Chart-specific owners
+charts/cloudflared/ @aRustyDev
+charts/external-secrets/ @aRustyDev
+
+# CI/Workflow owners
+.github/ @aRustyDev
+
+# Documentation owners
+docs/ @aRustyDev

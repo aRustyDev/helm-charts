@@ -18,6 +18,7 @@ An Architecture Decision Record (ADR) captures an important architectural decisi
 | [ADR-006](./006-release-please-versioning.md) | Release-Please for Helm Chart Versioning | Accepted |
 | [ADR-007](./007-separate-ct-configs.md) | Separate Chart-Testing Configs | Accepted |
 | [ADR-008](./008-repository-dispatch-automation.md) | Repository Dispatch for Workflow Automation | Accepted |
+| [ADR-009](./009-integration-auto-merge.md) | Trust-Based Auto-Merge for Integration Branch | Accepted |
 
 ## ADR Template
 
