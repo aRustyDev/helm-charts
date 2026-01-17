@@ -24,8 +24,17 @@ on:
     branches:
       - main
     # Note: No path filter - skip jobs handle non-chart PRs to satisfy required checks
+
+  # Triggered by W2 after creating a chart PR
+  repository_dispatch:
+    types: [chart-pr-created]
+
   workflow_dispatch:
     inputs:
+      pr_number:
+        description: 'PR number to validate (required for dispatch)'
+        required: false
+        type: string
       test_all:
         description: 'Test all charts (not just changed)'
         required: false
@@ -44,10 +53,64 @@ permissions:
   attestations: write
 
 concurrency:
-  group: w5-validate-${{ github.event.pull_request.number || github.run_id }}
+  group: w5-validate-${{ github.event.pull_request.number || github.event.client_payload.pr || github.run_id }}
   cancel-in-progress: false
 
+# Allowed actors for repository_dispatch (W2 uses github-actions[bot])
+env:
+  ALLOWED_DISPATCH_ACTORS: "github-actions[bot]"
+
 jobs:
+  # ==========================================================================
+  # Actor validation for repository_dispatch
+  # ==========================================================================
+
+  validate-dispatch:
+    if: github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.validate.outputs.pr_number }}
+      chart: ${{ steps.validate.outputs.chart }}
+      actor_valid: ${{ steps.validate.outputs.actor_valid }}
+    steps:
+      - name: Validate Actor and Extract Payload
+        id: validate
+        env:
+          ACTOR: ${{ github.actor }}
+          PAYLOAD_PR: ${{ github.event.client_payload.pr }}
+          PAYLOAD_CHART: ${{ github.event.client_payload.chart }}
+        run: |
+          echo "::group::Dispatch Validation"
+          echo "Actor: $ACTOR"
+          echo "Event type: ${{ github.event.action }}"
+          echo "Payload PR: $PAYLOAD_PR"
+          echo "Payload Chart: $PAYLOAD_CHART"
+          echo "::endgroup::"
+
+          # Validate actor against allowed list
+          ALLOWED="${{ env.ALLOWED_DISPATCH_ACTORS }}"
+          if [[ ! ",$ALLOWED," =~ ",$ACTOR," ]]; then
+            echo "::error::Unauthorized actor: $ACTOR (allowed: $ALLOWED)"
+            echo "actor_valid=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "::notice::Actor validated: $ACTOR"
+          echo "actor_valid=true" >> "$GITHUB_OUTPUT"
+
+          # Validate required payload fields
+          if [[ -z "$PAYLOAD_PR" ]]; then
+            echo "::error::Missing required payload field: pr"
+            exit 1
+          fi
+
+          echo "pr_number=$PAYLOAD_PR" >> "$GITHUB_OUTPUT"
+          echo "chart=$PAYLOAD_CHART" >> "$GITHUB_OUTPUT"
+
+      - name: Audit Log Entry
+        run: |
+          echo "::notice::repository_dispatch audit: actor=${{ github.actor }}, event=${{ github.event.action }}, pr=${{ github.event.client_payload.pr }}, chart=${{ github.event.client_payload.chart }}, run_id=${{ github.run_id }}"
+
   # ==========================================================================
   # Validation jobs (skip on PR close)
   # ==========================================================================
@@ -55,28 +118,78 @@ jobs:
   # Phase 5.1: Validate source branch and detect charts
   validate-and-detect:
     # Skip validation when PR is closed (cleanup job handles merge)
-    if: github.event.action != 'closed'
+    # For repository_dispatch, wait for actor validation first
+    needs: [validate-dispatch]
+    if: |
+      always() &&
+      github.event.action != 'closed' &&
+      (github.event_name != 'repository_dispatch' || needs.validate-dispatch.outputs.actor_valid == 'true')
     runs-on: ubuntu-latest
     outputs:
       charts: ${{ steps.detect.outputs.charts }}
       has_charts: ${{ steps.detect.outputs.has_charts }}
       source_valid: ${{ steps.validate.outputs.valid }}
+      pr_number: ${{ steps.context.outputs.pr_number }}
+      head_ref: ${{ steps.context.outputs.head_ref }}
+      base_ref: ${{ steps.context.outputs.base_ref }}
     steps:
+      - name: Determine PR Context
+        id: context
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          EVENT="${{ github.event_name }}"
+
+          if [[ "$EVENT" == "repository_dispatch" ]]; then
+            PR_NUMBER="${{ github.event.client_payload.pr }}"
+            echo "::notice::repository_dispatch: PR #$PR_NUMBER"
+          elif [[ "$EVENT" == "workflow_dispatch" ]]; then
+            PR_NUMBER="${{ inputs.pr_number }}"
+            echo "::notice::workflow_dispatch: PR #$PR_NUMBER"
+          else
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            echo "::notice::pull_request: PR #$PR_NUMBER"
+          fi
+
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+          # For dispatch events, get PR details
+          if [[ "$EVENT" == "repository_dispatch" || "$EVENT" == "workflow_dispatch" ]]; then
+            if [[ -n "$PR_NUMBER" ]]; then
+              PR_DATA=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" --jq '{head_ref: .head.ref, head_sha: .head.sha, base_ref: .base.ref, base_sha: .base.sha}')
+              echo "head_ref=$(echo "$PR_DATA" | jq -r '.head_ref')" >> "$GITHUB_OUTPUT"
+              echo "head_sha=$(echo "$PR_DATA" | jq -r '.head_sha')" >> "$GITHUB_OUTPUT"
+              echo "base_ref=$(echo "$PR_DATA" | jq -r '.base_ref')" >> "$GITHUB_OUTPUT"
+              echo "base_sha=$(echo "$PR_DATA" | jq -r '.base_sha')" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "head_ref=${{ github.head_ref }}" >> "$GITHUB_OUTPUT"
+            echo "head_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+            echo "base_ref=${{ github.event.pull_request.base.ref }}" >> "$GITHUB_OUTPUT"
+            echo "base_sha=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ steps.context.outputs.head_sha || github.sha }}
 
       - name: Validate Source Branch
         id: validate
+        env:
+          HEAD_REF: ${{ steps.context.outputs.head_ref || github.head_ref }}
         run: |
-          HEAD_REF="${{ github.head_ref }}"
-
-          # For workflow_dispatch, skip branch validation
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "::notice::Workflow dispatch - skipping branch validation"
+          # For workflow_dispatch without PR, skip branch validation
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -z "$HEAD_REF" ]]; then
+            echo "::notice::Workflow dispatch without PR - skipping branch validation"
             echo "valid=true" >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+
+          # For repository_dispatch, validate came from W2
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            echo "::notice::repository_dispatch from validated actor"
           fi
 
           # Validate branch pattern: charts/<chart> (from W2) or integration/<chart>
@@ -95,11 +208,11 @@ jobs:
 
       - name: Detect Changed Charts
         id: detect
+        env:
+          BASE_SHA: ${{ steps.context.outputs.base_sha || 'origin/main' }}
+          HEAD_SHA: ${{ steps.context.outputs.head_sha || 'HEAD' }}
         run: |
           source .github/scripts/attestation-lib.sh
-
-          BASE_SHA="${{ github.event.pull_request.base.sha || 'origin/main' }}"
-          HEAD_SHA="${{ github.event.pull_request.head.sha || 'HEAD' }}"
 
           echo "::group::Detecting changed charts"
           CHARTS=$(detect_changed_charts "$BASE_SHA..$HEAD_SHA")
@@ -281,7 +394,7 @@ jobs:
       - name: Checkout PR Branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
+          ref: ${{ needs.validate-and-detect.outputs.head_ref }}
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
@@ -304,7 +417,7 @@ jobs:
           source .github/scripts/version-bump.sh
 
           CHARTS="${{ needs.validate-and-detect.outputs.charts }}"
-          BASE_REF="origin/${{ github.event.pull_request.base.ref }}"
+          BASE_REF="origin/${{ needs.validate-and-detect.outputs.base_ref }}"
 
           BUMPED_CHARTS=""
           BUMP_RESULTS=""
@@ -365,7 +478,7 @@ jobs:
           Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
 
           # Push to PR branch
-          git push origin HEAD:${{ github.head_ref }}
+          git push origin HEAD:${{ needs.validate-and-detect.outputs.head_ref }}
 
           echo "committed=true" >> "$GITHUB_OUTPUT"
           echo "::notice::Committed and pushed version bump"
@@ -388,7 +501,7 @@ jobs:
         run: |
           source .github/scripts/attestation-lib.sh
 
-          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_NUMBER="${{ needs.validate-and-detect.outputs.pr_number }}"
           CHARTS="${{ needs.validate-and-detect.outputs.charts }}"
 
           # Build attestation map
