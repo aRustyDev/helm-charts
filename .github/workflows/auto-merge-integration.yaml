@@ -32,12 +32,6 @@ permissions:
   contents: write
   pull-requests: write
 
-# Configuration: branches eligible for auto-merge
-env:
-  # Comma-separated list of base branches that allow auto-merge
-  # PRs targeting these branches will be processed; all others ignored
-  ALLOWED_BASE_BRANCHES: "integration"
-
 jobs:
   enable-automerge:
     name: Enable Auto-Merge
@@ -54,7 +48,10 @@ jobs:
         id: pr
         env:
           GH_TOKEN: ${{ github.token }}
-          ALLOWED_BASE_BRANCHES: ${{ env.ALLOWED_BASE_BRANCHES }}
+          # Configure allowed branches via GitHub repository variable
+          # Settings → Secrets and variables → Actions → Variables
+          # Default: "integration" if not set
+          ALLOWED_BASE_BRANCHES: ${{ vars.AUTO_MERGE_ALLOWED_BRANCHES || 'integration' }}
         run: |
           echo "::group::Finding PR from workflow run"
 
