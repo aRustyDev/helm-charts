@@ -11,8 +11,9 @@
 # - This avoids needing to sync workflow files to integration branch
 #
 # Trust Requirements (ALL must pass):
-# 1. PR author is listed in CODEOWNERS
-# 2. All commits in PR are signed/verified
+# 1. PR targets an allowed base branch (configured in ALLOWED_BASE_BRANCHES)
+# 2. PR author is listed in CODEOWNERS
+# 3. All commits in PR are signed/verified
 #
 # See ADR-009 for details.
 
@@ -31,6 +32,12 @@ permissions:
   contents: write
   pull-requests: write
 
+# Configuration: branches eligible for auto-merge
+env:
+  # Comma-separated list of base branches that allow auto-merge
+  # PRs targeting these branches will be processed; all others ignored
+  ALLOWED_BASE_BRANCHES: "integration"
+
 jobs:
   enable-automerge:
     name: Enable Auto-Merge
@@ -47,6 +54,7 @@ jobs:
         id: pr
         env:
           GH_TOKEN: ${{ github.token }}
+          ALLOWED_BASE_BRANCHES: ${{ env.ALLOWED_BASE_BRANCHES }}
         run: |
           echo "::group::Finding PR from workflow run"
 
@@ -54,13 +62,49 @@ jobs:
           HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
           echo "Looking for PR with head SHA: $HEAD_SHA"
 
-          # Find the PR targeting integration with this head SHA
-          PR_DATA=$(gh pr list \
-            --repo "${{ github.repository }}" \
-            --state open \
-            --base integration \
-            --json number,headRefOid,author \
-            --jq ".[] | select(.headRefOid == \"$HEAD_SHA\")")
+          # Convert allowed branches to array for iteration
+          IFS=',' read -ra ALLOWED_BRANCHES <<< "$ALLOWED_BASE_BRANCHES"
+
+          PR_DATA=""
+          MATCHED_BASE=""
+
+          # Search for PR in each allowed base branch
+          for BASE_BRANCH in "${ALLOWED_BRANCHES[@]}"; do
+            BASE_BRANCH=$(echo "$BASE_BRANCH" | xargs)  # trim whitespace
+            echo "Checking for PR targeting '$BASE_BRANCH'..."
+
+            FOUND=$(gh pr list \
+              --repo "${{ github.repository }}" \
+              --state open \
+              --base "$BASE_BRANCH" \
+              --json number,headRefOid,author,baseRefName \
+              --jq ".[] | select(.headRefOid == \"$HEAD_SHA\")")
+
+            if [[ -n "$FOUND" ]]; then
+              PR_DATA="$FOUND"
+              MATCHED_BASE="$BASE_BRANCH"
+              echo "Found PR targeting '$BASE_BRANCH'"
+              break
+            fi
+          done
+
+          # Also check if PR exists but targets a non-allowed branch (for logging)
+          if [[ -z "$PR_DATA" ]]; then
+            ALL_PRS=$(gh pr list \
+              --repo "${{ github.repository }}" \
+              --state open \
+              --json number,headRefOid,baseRefName \
+              --jq ".[] | select(.headRefOid == \"$HEAD_SHA\")")
+
+            if [[ -n "$ALL_PRS" ]]; then
+              WRONG_BASE=$(echo "$ALL_PRS" | jq -r '.baseRefName')
+              echo "::warning::PR found but targets '$WRONG_BASE' which is not in allowed branches: $ALLOWED_BASE_BRANCHES"
+              echo "found=false" >> "$GITHUB_OUTPUT"
+              echo "reason=branch_not_allowed" >> "$GITHUB_OUTPUT"
+              echo "::endgroup::"
+              exit 0
+            fi
+          fi
 
           if [[ -z "$PR_DATA" ]]; then
             echo "::warning::No open PR found for SHA $HEAD_SHA"
