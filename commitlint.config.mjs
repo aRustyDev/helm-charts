@@ -90,8 +90,8 @@ export default {
     'body-leading-blank': [2, 'always'],
     'body-max-line-length': [1, 'always', 100], // Warning only for body
 
-    // Footer rules
-    'footer-leading-blank': [2, 'always'],
+    // Footer rules (warning only - GitHub squash commits often lack blank line before footer)
+    'footer-leading-blank': [1, 'always'],
     'footer-max-line-length': [1, 'always', 100], // Warning only for footer
 
     // Signed commits (optional - warning only)
@@ -110,9 +110,12 @@ export default {
     },
   },
 
-  // Ignore release-please auto-generated commits
+  // Ignore auto-generated commits
   ignores: [
     (commit) => commit.startsWith('chore(main): release'),
     (commit) => commit.startsWith('chore(release):'),
+    // Ignore merge commits
+    (commit) => commit.startsWith('Merge '),
+    (commit) => commit.startsWith('Merge pull request'),
   ],
 };
