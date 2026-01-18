@@ -38,6 +38,10 @@
 # Security
 
 - [Chart Verification](./security/verification.md)
+- [Attestation & Provenance](./attestation/index.md)
+  - [Verification Methods](./attestation/verification.md)
+  - [Lineage Tracing](./attestation/lineage.md)
+  - [Limitations](./attestation/limitations.md)
 
 # Contributing
 
