@@ -23,8 +23,9 @@ on:
     workflows: ["Validate Contribution PR"]
     types:
       - completed
-    branches:
-      - integration
+    # Note: No branches filter - W1 only runs on PRs to integration anyway
+    # The branches filter matches HEAD branch, not BASE branch, so we check
+    # the target branch inside the workflow instead
 
 permissions:
   contents: write
