@@ -1,0 +1,192 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+#
+# Auto-Merge Integration PRs (Trust-Based)
+#
+# This workflow enables GitHub's native auto-merge on PRs to integration
+# after W1 validation passes, using trust-based verification.
+#
+# Architecture Decision:
+# - Separate workflow using workflow_run trigger (not embedded in W1)
+# - Runs from default branch (main), not the PR branch
+# - This avoids needing to sync workflow files to integration branch
+#
+# Trust Requirements (ALL must pass):
+# 1. PR author is listed in CODEOWNERS
+# 2. All commits in PR are signed/verified
+#
+# See ADR-009 for details.
+
+name: Auto-Merge Integration PRs
+
+on:
+  workflow_run:
+    workflows: ["Validate Contribution PR"]
+    types:
+      - completed
+    branches:
+      - integration
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable-automerge:
+    name: Enable Auto-Merge
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get PR Information
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "::group::Finding PR from workflow run"
+
+          # Get the head SHA from the workflow run
+          HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+          echo "Looking for PR with head SHA: $HEAD_SHA"
+
+          # Find the PR targeting integration with this head SHA
+          PR_DATA=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --base integration \
+            --json number,headRefOid,author \
+            --jq ".[] | select(.headRefOid == \"$HEAD_SHA\")")
+
+          if [[ -z "$PR_DATA" ]]; then
+            echo "::warning::No open PR found for SHA $HEAD_SHA"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PR_NUMBER=$(echo "$PR_DATA" | jq -r '.number')
+          PR_AUTHOR=$(echo "$PR_DATA" | jq -r '.author.login')
+
+          echo "Found PR #$PR_NUMBER by @$PR_AUTHOR"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "author=$PR_AUTHOR" >> "$GITHUB_OUTPUT"
+
+          echo "::endgroup::"
+
+      - name: Check Contributor Trust
+        if: steps.pr.outputs.found == 'true'
+        id: trust
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_AUTHOR: ${{ steps.pr.outputs.author }}
+        run: |
+          echo "::group::Checking contributor trust"
+
+          TRUSTED=false
+
+          # Check CODEOWNERS file locations
+          for CODEOWNERS_FILE in "CODEOWNERS" ".github/CODEOWNERS" "docs/CODEOWNERS"; do
+            if [[ -f "$CODEOWNERS_FILE" ]]; then
+              echo "Checking $CODEOWNERS_FILE for @$PR_AUTHOR"
+              if grep -q "@$PR_AUTHOR" "$CODEOWNERS_FILE" 2>/dev/null; then
+                echo "::notice::Author @$PR_AUTHOR is listed in $CODEOWNERS_FILE"
+                TRUSTED=true
+                break
+              fi
+            fi
+          done
+
+          if [[ "$TRUSTED" != "true" ]]; then
+            echo "::notice::Author @$PR_AUTHOR is not in CODEOWNERS - manual review required"
+          fi
+
+          echo "trusted=$TRUSTED" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+
+      - name: Check Commit Signatures
+        if: steps.pr.outputs.found == 'true' && steps.trust.outputs.trusted == 'true'
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          echo "::group::Verifying commit signatures"
+
+          # Get all commits in the PR
+          COMMITS=$(gh pr view "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json commits \
+            --jq '.commits[].oid')
+
+          ALL_VERIFIED=true
+          for SHA in $COMMITS; do
+            # Check commit verification status via API
+            VERIFIED=$(gh api "repos/${{ github.repository }}/commits/$SHA" \
+              --jq '.commit.verification.verified')
+
+            if [[ "$VERIFIED" != "true" ]]; then
+              echo "::warning::Commit $SHA is not verified"
+              ALL_VERIFIED=false
+              break
+            else
+              echo "Commit $SHA is verified"
+            fi
+          done
+
+          if [[ "$ALL_VERIFIED" == "true" ]]; then
+            echo "::notice::All commits are verified"
+          else
+            echo "::notice::Some commits are not verified - manual review required"
+          fi
+
+          echo "all_verified=$ALL_VERIFIED" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+
+      - name: Enable Auto-Merge
+        if: >-
+          steps.pr.outputs.found == 'true' &&
+          steps.trust.outputs.trusted == 'true' &&
+          steps.verify.outputs.all_verified == 'true'
+        uses: peter-evans/enable-pull-request-automerge@v3
+        with:
+          token: ${{ github.token }}
+          pull-request-number: ${{ steps.pr.outputs.number }}
+          merge-method: squash
+
+      - name: Summary
+        if: steps.pr.outputs.found == 'true'
+        run: |
+          PR_NUMBER="${{ steps.pr.outputs.number }}"
+          TRUSTED="${{ steps.trust.outputs.trusted }}"
+          VERIFIED="${{ steps.verify.outputs.all_verified }}"
+
+          echo "## Auto-Merge Status for PR #$PR_NUMBER" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Check | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|--------|" >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$TRUSTED" == "true" ]]; then
+            echo "| Contributor in CODEOWNERS | ✅ Pass |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| Contributor in CODEOWNERS | ❌ Fail |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [[ "$VERIFIED" == "true" ]]; then
+            echo "| All commits verified | ✅ Pass |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| All commits verified | ❌ Fail |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$TRUSTED" == "true" && "$VERIFIED" == "true" ]]; then
+            echo "**Result**: Auto-merge enabled ✅" >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice::Auto-merge ENABLED for PR #$PR_NUMBER"
+          else
+            echo "**Result**: Manual review required ⚠️" >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice::Auto-merge SKIPPED for PR #$PR_NUMBER - manual review required"
+          fi

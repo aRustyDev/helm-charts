@@ -1,7 +1,8 @@
 # ADR-009: Trust-Based Auto-Merge for Integration Branch
 
-**Status:** Accepted
-**Date:** 2025-01-17
+## Status
+
+Accepted (Updated 2025-01-17)
 
 ## Context
 
@@ -11,9 +12,16 @@ The CI pipeline has two merge points that currently require manual intervention:
 
 Manual merging creates bottlenecks and slows down the development workflow. However, fully automated merging raises security concerns about untrusted contributions.
 
+### Architectural Consideration
+
+Embedding auto-merge logic in W1 creates a **sync dependency** - the `integration` branch must always have the latest W1 workflow to get auto-merge functionality. This is fragile because:
+- PRs to `integration` run the workflow from the base branch
+- Workflow updates on `main` don't automatically apply to `integration`
+- Creates chicken-and-egg problems when testing workflow changes
+
 ## Decision
 
-Implement trust-based auto-merge for PRs to the `integration` branch:
+Implement trust-based auto-merge as a **separate workflow** using `workflow_run` trigger:
 
 | Condition | Auto-Merge? |
 |-----------|-------------|
@@ -25,14 +33,36 @@ PRs to `main` continue to require human review.
 
 ### Implementation
 
-1. **W1 workflow** includes an `enable-automerge` job that:
+1. **Separate workflow** (`auto-merge-integration.yaml`) that:
+   - Triggers on `workflow_run` of W1 completing successfully
+   - **Runs from default branch (main)**, not the PR branch
    - Checks if PR author is listed in `.github/CODEOWNERS`
    - Verifies all commits are signed (GPG or SSH)
    - Enables GitHub's native auto-merge only if both conditions pass
 
-2. **CODEOWNERS file** defines trusted contributors who can have PRs auto-merged
+2. **W1 workflow** remains focused on validation only (lint, ArtifactHub, commits)
 
-3. **GitHub's native auto-merge** respects all branch protection rules
+3. **CODEOWNERS file** defines trusted contributors who can have PRs auto-merged
+
+4. **GitHub's native auto-merge** respects all branch protection rules
+
+### Why `workflow_run` Trigger?
+
+The `workflow_run` event has a critical property: **it runs from the default branch (main)**, regardless of which branch triggered the source workflow.
+
+```yaml
+on:
+  workflow_run:
+    workflows: ["Validate Contribution PR"]
+    types: [completed]
+    branches: [integration]
+```
+
+This means:
+- Auto-merge workflow always runs the version from `main`
+- No need to keep workflow files synced between branches
+- Updates to auto-merge logic apply immediately
+- Decouples validation (W1) from merge automation
 
 ## Rationale
 
@@ -48,6 +78,12 @@ PRs to `main` continue to require human review.
 - GitHub natively tracks verification status
 - Standard security practice for sensitive repositories
 
+### Why separate workflow?
+- Runs from `main` branch regardless of PR target
+- Eliminates workflow sync issues between branches
+- Cleaner separation of concerns (validation vs. automation)
+- Easier to test and update independently
+
 ### Why auto-merge only to integration?
 - `integration` branch is a staging area, not production
 - PRs to `main` represent release candidates that warrant human review
@@ -61,12 +97,14 @@ PRs to `main` continue to require human review.
 - Clear security policy (trust + verification)
 - Full audit trail via GitHub workflow logs
 - Branch protection rules still enforced
+- **No workflow sync required** between branches
 
 ### Negative
 - New contributors must wait for manual review
 - Contributors must set up commit signing
 - CODEOWNERS file must be maintained
 - Auto-merge setting must be enabled in repository settings
+- Slight delay (workflow_run triggers after W1 completes)
 
 ## Configuration Required
 
@@ -87,6 +125,9 @@ PRs to `main` continue to require human review.
 
 ## Alternatives Considered
 
+### Embed auto-merge in W1
+Initially implemented but **rejected** because it requires keeping W1 in sync between `main` and `integration` branches. The `workflow_run` approach is more robust.
+
 ### Auto-merge all passing PRs
 Rejected because it allows any contributor to merge without review, creating security risk.
 
@@ -94,7 +135,7 @@ Rejected because it allows any contributor to merge without review, creating sec
 Rejected because it creates unnecessary bottlenecks for trusted contributors.
 
 ### Path-based auto-merge (charts only)
-Considered but deferred. Can be added later by modifying the `enable-automerge` job to check changed paths.
+Considered but deferred. Can be added later by modifying the auto-merge workflow to check changed paths.
 
 ### GitHub App token for auto-merge
 Rejected because GitHub's native auto-merge with `GITHUB_TOKEN` is sufficient and simpler.
@@ -102,5 +143,6 @@ Rejected because GitHub's native auto-merge with `GITHUB_TOKEN` is sufficient an
 ## Related
 
 - [ADR-008: Repository Dispatch for Workflow Automation](008-repository-dispatch-automation.md)
+- [Auto-Merge Workflow](.github/workflows/auto-merge-integration.yaml)
 - [Workflow 1: Validate Contribution PR](.github/workflows/validate-contribution-pr.yaml)
 - [CODEOWNERS](.github/CODEOWNERS)

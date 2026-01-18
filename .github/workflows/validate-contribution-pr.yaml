@@ -29,9 +29,9 @@ on:
         default: false
         type: boolean
 
-# Permissions required for attestations, PR updates, and auto-merge
+# Permissions required for attestations and PR updates
 permissions:
-  contents: write  # Required for auto-merge
+  contents: read
   pull-requests: write
   id-token: write
   attestations: write
@@ -356,131 +356,6 @@ jobs:
     steps:
       - run: echo "No chart changes detected, skipping artifacthub-lint"
 
-  #############################################################################
-  # Trust-Based Auto-Merge
-  # Enables GitHub auto-merge for trusted contributors with verified commits
-  #############################################################################
-  enable-automerge:
-    name: Enable Auto-Merge
-    needs: [lint, lint-skip, artifacthub-lint, artifacthub-lint-skip, commit-validation]
-    if: |
-      always() &&
-      github.event_name == 'pull_request' &&
-      !cancelled() &&
-      (needs.lint.result == 'success' || needs.lint-skip.result == 'success') &&
-      (needs.artifacthub-lint.result == 'success' || needs.artifacthub-lint-skip.result == 'success') &&
-      needs.commit-validation.result == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Check Contributor Trust
-        id: trust
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-        run: |
-          echo "::group::Checking contributor trust"
-          echo "PR Author: $PR_AUTHOR"
-
-          # Check if author is in CODEOWNERS
-          TRUSTED=false
-          CODEOWNERS_FILE=""
-
-          if [[ -f ".github/CODEOWNERS" ]]; then
-            CODEOWNERS_FILE=".github/CODEOWNERS"
-          elif [[ -f "CODEOWNERS" ]]; then
-            CODEOWNERS_FILE="CODEOWNERS"
-          fi
-
-          if [[ -n "$CODEOWNERS_FILE" ]]; then
-            echo "Using CODEOWNERS file: $CODEOWNERS_FILE"
-            if grep -q "@$PR_AUTHOR" "$CODEOWNERS_FILE" 2>/dev/null; then
-              echo "::notice::Author @$PR_AUTHOR is listed in CODEOWNERS"
-              TRUSTED=true
-            else
-              echo "::notice::Author @$PR_AUTHOR is NOT in CODEOWNERS"
-            fi
-          else
-            echo "::warning::No CODEOWNERS file found"
-          fi
-
-          echo "trusted=$TRUSTED" >> "$GITHUB_OUTPUT"
-          echo "::endgroup::"
-
-      - name: Check Commit Signatures
-        id: verify
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo "::group::Checking commit signatures"
-
-          # Get all commits in the PR
-          COMMITS=$(gh pr view ${{ github.event.pull_request.number }} \
-            --json commits --jq '.commits[].oid')
-
-          echo "Commits to verify:"
-          echo "$COMMITS"
-
-          ALL_VERIFIED=true
-          UNVERIFIED_COMMITS=""
-
-          for SHA in $COMMITS; do
-            # Check commit verification status
-            VERIFIED=$(gh api "repos/${{ github.repository }}/commits/$SHA" \
-              --jq '.commit.verification.verified' 2>/dev/null || echo "false")
-
-            if [[ "$VERIFIED" != "true" ]]; then
-              echo "::warning::Commit $SHA is NOT verified"
-              ALL_VERIFIED=false
-              UNVERIFIED_COMMITS="${UNVERIFIED_COMMITS}${SHA} "
-            else
-              echo "Commit $SHA is verified"
-            fi
-          done
-
-          echo "all_verified=$ALL_VERIFIED" >> "$GITHUB_OUTPUT"
-          echo "unverified_commits=$UNVERIFIED_COMMITS" >> "$GITHUB_OUTPUT"
-          echo "::endgroup::"
-
-      - name: Enable Auto-Merge (Trusted + Verified)
-        if: |
-          steps.trust.outputs.trusted == 'true' &&
-          steps.verify.outputs.all_verified == 'true'
-        uses: peter-evans/enable-pull-request-automerge@v3
-        with:
-          token: ${{ github.token }}
-          pull-request-number: ${{ github.event.pull_request.number }}
-          merge-method: squash
-
-      - name: Generate Summary
-        run: |
-          TRUSTED="${{ steps.trust.outputs.trusted }}"
-          VERIFIED="${{ steps.verify.outputs.all_verified }}"
-
-          {
-            echo "## Auto-Merge Status"
-            echo ""
-            echo "| Check | Status |"
-            echo "|-------|--------|"
-            echo "| Contributor in CODEOWNERS | $([[ "$TRUSTED" == "true" ]] && echo ':white_check_mark:' || echo ':x:') |"
-            echo "| All commits verified | $([[ "$VERIFIED" == "true" ]] && echo ':white_check_mark:' || echo ':x:') |"
-            echo ""
-            if [[ "$TRUSTED" == "true" && "$VERIFIED" == "true" ]]; then
-              echo ":rocket: **Auto-merge ENABLED** - PR will merge automatically when all checks pass"
-            else
-              echo ":lock: **Auto-merge NOT enabled** - Manual approval required"
-              echo ""
-              echo "To enable auto-merge:"
-              if [[ "$TRUSTED" != "true" ]]; then
-                echo "- Add @${{ github.event.pull_request.user.login }} to CODEOWNERS"
-              fi
-              if [[ "$VERIFIED" != "true" ]]; then
-                echo "- Sign all commits with GPG or SSH key"
-                echo "- Unverified commits: ${{ steps.verify.outputs.unverified_commits }}"
-              fi
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          echo "::notice::Trust check: trusted=$TRUSTED, verified=$VERIFIED"
+  # NOTE: Auto-merge is handled by a separate workflow (auto-merge-integration.yaml)
+  # that uses workflow_run trigger. This ensures the auto-merge logic runs from
+  # the default branch (main) rather than requiring sync to integration branch.
