@@ -1,23 +1,23 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 #
-# Auto-Merge Integration PRs (Trust-Based)
+# Auto-Merge PRs (Trust-Based)
 #
-# This workflow enables GitHub's native auto-merge on PRs to integration
-# after W1 validation passes, using trust-based verification.
+# This workflow enables GitHub's native auto-merge on PRs targeting allowed
+# branches after W1 validation passes, using trust-based verification.
 #
 # Architecture Decision:
 # - Separate workflow using workflow_run trigger (not embedded in W1)
 # - Runs from default branch (main), not the PR branch
-# - This avoids needing to sync workflow files to integration branch
+# - This avoids needing to sync workflow files to target branches
 #
 # Trust Requirements (ALL must pass):
-# 1. PR targets an allowed base branch (configured in ALLOWED_BASE_BRANCHES)
+# 1. PR targets an allowed base branch (configured via vars.AUTO_MERGE_ALLOWED_BRANCHES)
 # 2. PR author is listed in CODEOWNERS
 # 3. All commits in PR are signed/verified
 #
 # See ADR-009 for details.
 
-name: Auto-Merge Integration PRs
+name: Auto-Merge PRs
 
 on:
   workflow_run:
