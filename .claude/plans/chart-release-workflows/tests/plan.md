@@ -1,0 +1,380 @@
+# Chart Release Workflow Test Plan
+
+## Overview
+
+This test plan validates all controls in the chart release workflow pipeline:
+
+```
+Developer PR → W1 (Validate) → Auto-Merge → integration
+                                    ↓
+                              W2 (Filter Charts)
+                                    ↓
+                              charts/<chart> branch + PR to main
+                                    ↓
+                              W5 (Validate Atomic Chart PR)
+                                    ↓
+                              Human Review → Merge to main
+                                    ↓
+                              Release (Tag + Package + Publish)
+```
+
+## Prerequisites
+
+### Repository Configuration
+
+| Requirement | Location | Value |
+|-------------|----------|-------|
+| Auto-merge enabled | Settings → General → Pull Requests | ✓ Allow auto-merge |
+| `AUTO_MERGE_ALLOWED_BRANCHES` | Settings → Secrets and variables → Actions → Variables | `integration` |
+| Branch protection (integration) | Settings → Branches | Require PR, status checks |
+| Branch protection (main) | Settings → Branches | Require PR, status checks, review |
+| CODEOWNERS | `.github/CODEOWNERS` | Lists trusted contributors |
+
+### Test User Accounts
+
+| Account | Purpose | Requirements |
+|---------|---------|--------------|
+| Trusted User | Tests pass scenarios | Listed in CODEOWNERS, has signing key |
+| Untrusted User | Tests fail scenarios | NOT in CODEOWNERS |
+
+### Test Chart
+
+Create a minimal test chart that can be safely modified:
+
+```bash
+# charts/test-workflow/Chart.yaml
+apiVersion: v2
+name: test-workflow
+description: Test chart for workflow validation
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+```
+
+---
+
+## Test Scenarios
+
+### Auto-Merge Workflow (`auto-merge-integration.yaml`)
+
+#### Controls
+
+| ID | Control | Code Location |
+|----|---------|---------------|
+| AM-C1 | W1 must succeed | `workflow_run.conclusion == 'success'` |
+| AM-C2 | Must be PR event | `workflow_run.event == 'pull_request'` |
+| AM-C3 | PR targets allowed branch | `ALLOWED_BASE_BRANCHES` check |
+| AM-C4 | PR must be open | `--state open` filter |
+| AM-C5 | Author in CODEOWNERS | `grep -q "@$PR_AUTHOR"` |
+| AM-C6 | All commits signed | `.commit.verification.verified` |
+
+#### Test Matrix
+
+| Test ID | Control | Scenario | Expected | Cleanup |
+|---------|---------|----------|----------|---------|
+| AM-T1 | AM-C1 | W1 fails (invalid Chart.yaml) | Workflow doesn't trigger | Delete branch |
+| AM-T2 | AM-C2 | W1 via workflow_dispatch | Job skips (`event != 'pull_request'`) | N/A |
+| AM-T3 | AM-C3 | PR targets `main` | "branch_not_allowed" warning | Delete branch, close PR |
+| AM-T4 | AM-C4 | Close PR before workflow runs | "No open PR found" | Delete branch |
+| AM-T5 | AM-C5 | Author NOT in CODEOWNERS | Trust check fails | Delete branch, close PR |
+| AM-T6 | AM-C5 | Author IN CODEOWNERS | Trust check passes | Continue to AM-T7 |
+| AM-T7 | AM-C6 | Unsigned commits | Verification fails | Delete branch, close PR |
+| AM-T8 | AM-C6 | All commits signed | Verification passes | Continue to merge |
+| AM-T9 | ALL | Trusted + Verified | Auto-merge ENABLED | Merge completes |
+| AM-T10 | ALL | Untrusted + Verified | Auto-merge NOT enabled | Manual merge required |
+
+---
+
+### W2: Create Atomic Chart PR (`create-atomic-chart-pr.yaml`)
+
+#### Controls
+
+| ID | Control | Code Location |
+|----|---------|---------------|
+| W2-C1 | Trigger on integration push | `push.branches: [integration]` |
+| W2-C2 | Only process charts/** changes | `paths: ['charts/**']` |
+| W2-C3 | Chart must have Chart.yaml | `if [[ -f "charts/$dir/Chart.yaml" ]]` |
+| W2-C4 | Concurrency control | `group: w2-filter-charts` |
+| W2-C5 | Create charts/<chart> branch | Branch creation logic |
+| W2-C6 | Create PR to main | `gh pr create --base main` |
+
+#### Test Matrix
+
+| Test ID | Control | Scenario | Expected | Cleanup |
+|---------|---------|----------|----------|---------|
+| W2-T1 | W2-C1 | Push to integration (not charts/) | Workflow doesn't run | N/A |
+| W2-T2 | W2-C2 | Push to main (not integration) | Workflow doesn't run | N/A |
+| W2-T3 | W2-C3 | Change file in charts/ but not a chart | Skipped with notice | N/A |
+| W2-T4 | W2-C4 | Concurrent pushes to integration | Second waits or cancels | N/A |
+| W2-T5 | W2-C5 | Single chart change | Creates `charts/<chart>` branch | Delete branch |
+| W2-T6 | W2-C5 | Multiple chart changes | Creates multiple branches | Delete branches |
+| W2-T7 | W2-C6 | PR already exists for branch | Updates existing PR | N/A |
+
+---
+
+### W5: Validate Atomic Chart PR (`validate-atomic-chart-pr.yaml`)
+
+#### Controls
+
+| ID | Control | Code Location |
+|----|---------|---------------|
+| W5-C1 | PR targets main | `pull_request.branches: [main]` |
+| W5-C2 | Dispatch actor validation | `ALLOWED_DISPATCH_ACTORS` check |
+| W5-C3 | Source branch pattern | `^charts/[a-z0-9-]+$` or `^integration/[a-z0-9-]+$` |
+| W5-C4 | Chart must exist | `has_charts == 'true'` |
+| W5-C5 | ArtifactHub lint pass | `ah lint --kind helm` |
+| W5-C6 | Helm lint pass | `ct lint` |
+| W5-C7 | K8s matrix tests pass | `ct install` on v1.32, v1.33, v1.34 |
+| W5-C8 | Version bump logic | Conventional commit parsing |
+| W5-C9 | Cleanup on merge | Delete source branch |
+
+#### Test Matrix
+
+| Test ID | Control | Scenario | Expected | Cleanup |
+|---------|---------|----------|----------|---------|
+| W5-T1 | W5-C1 | PR targets integration | Workflow doesn't run | Close PR |
+| W5-T2 | W5-C2 | Dispatch from unauthorized actor | "Unauthorized actor" error | N/A |
+| W5-T3 | W5-C2 | Dispatch from github-actions[bot] | Actor validated | Continue |
+| W5-T4 | W5-C3 | PR from `feature/` branch | "does not match expected pattern" | Close PR |
+| W5-T5 | W5-C3 | PR from `charts/test` branch | Branch validated | Continue |
+| W5-T6 | W5-C4 | PR with no chart changes | Skip validation jobs | Close PR |
+| W5-T7 | W5-C5 | Chart missing ArtifactHub metadata | Lint fails | Fix and retry |
+| W5-T8 | W5-C6 | Chart with Helm lint errors | ct lint fails | Fix and retry |
+| W5-T9 | W5-C7 | Chart install fails on K8s 1.32 | Matrix job fails | Fix and retry |
+| W5-T10 | W5-C8 | `fix(chart):` commit | Patch version bump | Verify Chart.yaml |
+| W5-T11 | W5-C8 | `feat(chart):` commit | Minor version bump | Verify Chart.yaml |
+| W5-T12 | W5-C8 | `feat(chart)!:` commit | Major version bump | Verify Chart.yaml |
+| W5-T13 | W5-C9 | Merge PR to main | Source branch deleted | Verify deletion |
+
+---
+
+### Release Workflow (`release-atomic-chart.yaml`)
+
+#### Controls
+
+| ID | Control | Code Location |
+|----|---------|---------------|
+| R-C1 | Trigger on main push | `push.branches: [main]` |
+| R-C2 | Only process charts/** | `paths: ['charts/**']` |
+| R-C3 | Tag doesn't already exist | `git rev-parse "$TAG_NAME"` check |
+| R-C4 | Tag points to correct commit | Compare existing tag SHA |
+| R-C5 | Chart.yaml has version | `VERSION=$(grep '^version:')` |
+| R-C6 | Package attestation | `attest-build-provenance` |
+| R-C7 | GHCR push | `helm push` + Cosign sign |
+| R-C8 | GitHub Release created | `gh release create` |
+| R-C9 | Release branch updated | Push to `release` branch |
+
+#### Test Matrix
+
+| Test ID | Control | Scenario | Expected | Cleanup |
+|---------|---------|----------|----------|---------|
+| R-T1 | R-C1 | Push to integration (not main) | Workflow doesn't run | N/A |
+| R-T2 | R-C2 | Push to main (non-chart files) | Workflow doesn't run | N/A |
+| R-T3 | R-C3 | Tag already exists (same commit) | Skip with notice | N/A |
+| R-T4 | R-C4 | Tag exists at different commit | Error - version not bumped | Investigate |
+| R-T5 | R-C5 | Chart.yaml missing version | Error extracting version | Fix Chart.yaml |
+| R-T6 | R-C6 | Package created | Attestation generated | Verify attestation |
+| R-T7 | R-C7 | GHCR push | Chart in registry + signed | Verify with cosign |
+| R-T8 | R-C8 | Release created | GitHub Release exists | Verify assets |
+| R-T9 | R-C9 | Release branch updated | index.yaml updated | Verify content |
+
+---
+
+## End-to-End Test Scenarios
+
+### E2E-1: Happy Path (Full Pipeline)
+
+**Objective**: Verify complete workflow from contribution to release.
+
+**Steps**:
+1. Create feature branch from `integration`
+2. Add minor feature to `charts/test-workflow` (bump minor)
+3. Commit with `feat(test-workflow): add test feature` (signed)
+4. Push and create PR to `integration`
+5. Verify W1 passes
+6. Verify auto-merge enables (if trusted + verified)
+7. PR merges to `integration`
+8. Verify W2 creates `charts/test-workflow` branch + PR to `main`
+9. Verify W5 runs validation + bumps version
+10. Approve and merge PR to `main`
+11. Verify Release workflow creates tag + publishes
+
+**Expected**:
+- Version bumped from 0.1.0 → 0.2.0
+- Tag `test-workflow-v0.2.0` created
+- Package in GHCR
+- GitHub Release created
+
+**Cleanup**:
+- Delete `charts/test-workflow` branch
+- Keep tag and release (document in test log)
+
+---
+
+### E2E-2: Untrusted Contributor Path
+
+**Objective**: Verify untrusted contributors require manual review at integration.
+
+**Steps**:
+1. Fork repo as untrusted user
+2. Create same feature change
+3. Create PR from fork to `integration`
+4. Verify W1 passes
+5. Verify auto-merge does NOT enable
+6. Manual review and merge required
+7. Verify rest of pipeline works normally
+
+**Expected**:
+- Auto-merge skipped
+- Manual merge works
+- W2 → W5 → Release functions normally
+
+**Cleanup**:
+- Close PR if not merged
+- Delete any test branches
+
+---
+
+### E2E-3: Unsigned Commit Path
+
+**Objective**: Verify unsigned commits require manual review.
+
+**Steps**:
+1. Create feature branch
+2. Commit with `--no-gpg-sign`
+3. Create PR to `integration`
+4. Verify W1 passes
+5. Verify auto-merge does NOT enable (unverified commits)
+6. Manually merge
+7. Verify rest of pipeline works
+
+**Expected**:
+- Auto-merge skipped due to unverified commits
+- Pipeline continues after manual merge
+
+**Cleanup**:
+- Delete test branches
+
+---
+
+### E2E-4: Multiple Charts Changed
+
+**Objective**: Verify multiple charts are processed independently.
+
+**Steps**:
+1. Change both `charts/test-workflow` and `charts/cloudflared`
+2. Merge to `integration`
+3. Verify W2 creates TWO branches and TWO PRs
+4. Verify W5 runs on each independently
+5. Merge both PRs
+6. Verify Release creates separate tags/releases
+
+**Expected**:
+- Two independent pipelines
+- Each chart versioned separately
+- Each chart released separately
+
+**Cleanup**:
+- Delete test branches
+- Revert test changes if needed
+
+---
+
+## Cleanup Procedures
+
+### After Each Test
+
+1. **Delete test branches**:
+   ```bash
+   git push origin --delete <branch-name>
+   ```
+
+2. **Close test PRs**:
+   ```bash
+   gh pr close <PR-number> --delete-branch
+   ```
+
+3. **Revert test changes** (if on protected branch):
+   ```bash
+   git revert <commit-sha>
+   ```
+
+### Artifacts to Preserve in Version Control
+
+| Artifact | Keep? | Reason |
+|----------|-------|--------|
+| Test chart (`charts/test-workflow/`) | NO | Remove after testing |
+| Test results documentation | YES | Add to `docs/testing/` |
+| Workflow fixes discovered | YES | Commit improvements |
+| This test plan | YES | Reference for future testing |
+
+### Artifacts to Remove
+
+| Artifact | How to Remove |
+|----------|---------------|
+| Test branches | `git push origin --delete <branch>` |
+| Test PRs | `gh pr close --delete-branch` |
+| Test tags | `git push origin --delete <tag>` (if test-only) |
+| Test releases | Delete via GitHub UI (if test-only) |
+| Test chart | `rm -rf charts/test-workflow && git commit` |
+
+---
+
+## Test Execution Checklist
+
+### Phase 1: Auto-Merge Tests
+- [ ] AM-T1: W1 failure prevents trigger
+- [ ] AM-T5: Untrusted author blocked
+- [ ] AM-T7: Unsigned commits blocked
+- [ ] AM-T9: Happy path works
+
+### Phase 2: W2 Tests
+- [ ] W2-T1: Path filtering works
+- [ ] W2-T5: Single chart creates branch/PR
+- [ ] W2-T6: Multiple charts handled
+
+### Phase 3: W5 Tests
+- [ ] W5-T4: Invalid branch pattern rejected
+- [ ] W5-T5: Valid branch accepted
+- [ ] W5-T10: Patch version bump
+- [ ] W5-T11: Minor version bump
+- [ ] W5-T13: Cleanup on merge
+
+### Phase 4: Release Tests
+- [ ] R-T3: Duplicate tag handling
+- [ ] R-T7: GHCR push + signing
+- [ ] R-T8: GitHub Release created
+
+### Phase 5: End-to-End
+- [ ] E2E-1: Happy path complete
+- [ ] E2E-2: Untrusted user flow
+- [ ] E2E-3: Unsigned commit flow
+- [ ] E2E-4: Multiple charts
+
+---
+
+## Notes
+
+### Test Order Dependencies
+
+Some tests must run in sequence:
+1. AM tests should complete before E2E tests
+2. W2 tests require integration branch access
+3. W5 tests require W2 to create the PR first
+4. Release tests require W5 to complete
+
+### Test Isolation
+
+To avoid interference:
+- Use unique chart names for parallel tests
+- Use unique branch names with test ID prefix
+- Clean up immediately after each test
+
+### Failure Investigation
+
+When a test fails:
+1. Check workflow run logs
+2. Check branch protection rules
+3. Check repository variables
+4. Check CODEOWNERS file
+5. Document in test results
