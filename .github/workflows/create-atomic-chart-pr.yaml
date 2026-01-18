@@ -335,23 +335,6 @@ jobs:
 
           echo "::endgroup::"
 
-      - name: Trigger W5 validation
-        if: steps.pr.outputs.pr_number != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CHART: ${{ matrix.chart }}
-          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
-        run: |
-          echo "::notice::Triggering W5 validation for PR #$PR_NUMBER (chart: $CHART)"
-
-          # Dispatch repository event to trigger W5
-          gh api "repos/${{ github.repository }}/dispatches" \
-            --method POST \
-            -f event_type=chart-pr-created \
-            -f client_payload="{\"pr\": $PR_NUMBER, \"chart\": \"$CHART\"}"
-
-          echo "::notice::W5 validation triggered successfully"
-
       - name: Set result
         id: result
         env:
