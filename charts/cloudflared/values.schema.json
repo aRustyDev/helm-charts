@@ -9,6 +9,13 @@
       "title": "affinity",
       "type": "object"
     },
+    "priorityClassName": {
+      "default": "",
+      "description": "Priority class name for pod scheduling. For more information checkout: https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/",
+      "required": [],
+      "title": "priorityClassName",
+      "type": "string"
+    },
     "metrics": {
       "additionalProperties": false,
       "description": "Prometheus metrics configuration. Cloudflared exposes metrics on port 2000 by default.",
