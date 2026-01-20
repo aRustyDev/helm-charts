@@ -345,10 +345,12 @@ jobs:
           echo "::notice::Triggering W5 validation for PR #$PR_NUMBER (chart: $CHART)"
 
           # Dispatch repository event to trigger W5
+          # Note: client_payload must be a JSON object, not a string
+          jq -n --argjson pr "$PR_NUMBER" --arg chart "$CHART" \
+            '{event_type: "chart-pr-created", client_payload: {pr: $pr, chart: $chart}}' | \
           gh api "repos/${{ github.repository }}/dispatches" \
             --method POST \
-            -f event_type=chart-pr-created \
-            -f client_payload="{\"pr\": $PR_NUMBER, \"chart\": \"$CHART\"}"
+            --input -
 
           echo "::notice::W5 validation triggered successfully"
 
