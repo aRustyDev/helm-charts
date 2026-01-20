@@ -1,0 +1,117 @@
+# Test Atomization Components
+#
+# Runs unit tests for atomization workflow logic using bats.
+# Triggered on changes to atomization-related files.
+
+name: Test Atomization
+
+on:
+  pull_request:
+    paths:
+      - '.github/actions/atomize/**'
+      - '.github/actions/configs/**'
+      - '.github/tests/**'
+      - '.github/workflows/test-atomization.yaml'
+  push:
+    branches: [main, integration]
+    paths:
+      - '.github/actions/atomize/**'
+      - '.github/actions/configs/**'
+      - '.github/tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install bats
+        run: |
+          git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats-core
+          cd /tmp/bats-core && sudo ./install.sh /usr/local
+
+      - name: Install bats helpers
+        run: |
+          # Install bats-support
+          git clone --depth 1 https://github.com/bats-core/bats-support.git /tmp/bats-support
+          sudo mkdir -p /usr/local/lib/bats-support
+          sudo cp -r /tmp/bats-support/* /usr/local/lib/bats-support/
+
+          # Install bats-assert
+          git clone --depth 1 https://github.com/bats-core/bats-assert.git /tmp/bats-assert
+          sudo mkdir -p /usr/local/lib/bats-assert
+          sudo cp -r /tmp/bats-assert/* /usr/local/lib/bats-assert/
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Run unit tests
+        run: |
+          # Find all bats test files
+          if compgen -G ".github/tests/**/*.bats" > /dev/null; then
+            bats --tap .github/tests/**/*.bats
+          else
+            echo "::notice::No bats test files found yet"
+          fi
+
+  actionlint:
+    name: Lint Workflows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run actionlint
+        uses: raven-actions/actionlint@v2
+        with:
+          fail-on-error: true
+
+  shellcheck:
+    name: Lint Shell Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run shellcheck
+        run: |
+          # Check all shell scripts in .github/
+          find .github -name '*.sh' -o -name '*.bash' | while read -r script; do
+            echo "Checking: $script"
+            shellcheck "$script" || exit 1
+          done
+
+          # Check test helpers
+          if [[ -f .github/tests/helpers/test-helpers.bash ]]; then
+            shellcheck .github/tests/helpers/test-helpers.bash
+          fi
+
+  json-validation:
+    name: Validate JSON Configs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install check-jsonschema
+        run: pip install check-jsonschema
+
+      - name: Validate config against schema
+        run: |
+          CONFIG=".github/actions/configs/atomic-branches.json"
+          SCHEMA=".github/actions/configs/atomic-branches.schema.json"
+
+          if [[ -f "$CONFIG" ]] && [[ -f "$SCHEMA" ]]; then
+            check-jsonschema --schemafile "$SCHEMA" "$CONFIG"
+            echo "::notice::Config validation passed"
+          else
+            echo "::notice::Config or schema not yet created, skipping validation"
+          fi
