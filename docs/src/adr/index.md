@@ -19,6 +19,9 @@ An Architecture Decision Record (ADR) captures an important architectural decisi
 | [ADR-007](./007-separate-ct-configs.md) | Separate Chart-Testing Configs | Accepted |
 | [ADR-008](./008-repository-dispatch-automation.md) | Repository Dispatch for Workflow Automation | Accepted |
 | [ADR-009](./009-integration-auto-merge.md) | Trust-Based Auto-Merge for Integration Branch | Accepted |
+| [ADR-010](./010-linear-history-rebase.md) | Linear History and Rebase Workflow | Accepted |
+| [ADR-011](./011-full-atomization-model.md) | Full Atomization Model | Accepted |
+| [ADR-012](./012-github-app-token-pattern.md) | GitHub App Token Pattern for Workflows | Accepted |
 
 ## ADR Template
 

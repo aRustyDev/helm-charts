@@ -16,6 +16,7 @@
 # CI/CD
 
 - [Workflow Overview](./ci/index.md)
+  - [GitHub App Authentication](./ci/github-app-auth.md)
   - [Lint and Test](./ci/lint-test.md)
   - [Release Please](./ci/release-please.md)
   - [Release Charts](./ci/release.md)
@@ -34,6 +35,9 @@
   - [ADR-005: CI/CD Workflow Architecture](./adr/005-ci-workflows.md)
   - [ADR-006: Release-Please for Helm Chart Versioning](./adr/006-release-please-versioning.md)
   - [ADR-007: Separate Chart-Testing Configs](./adr/007-separate-ct-configs.md)
+  - [ADR-010: Linear History and Rebase Workflow](./adr/010-linear-history-rebase.md)
+  - [ADR-011: Full Atomization Model](./adr/011-full-atomization-model.md)
+  - [ADR-012: GitHub App Token Pattern](./adr/012-github-app-token-pattern.md)
 
 # Security
 
@@ -42,6 +46,11 @@
   - [Verification Methods](./attestation/verification.md)
   - [Lineage Tracing](./attestation/lineage.md)
   - [Limitations](./attestation/limitations.md)
+
+# Troubleshooting
+
+- [Commitlint Conflicts](./troubleshooting/commitlint-conflicts.md)
+- [CI Known Issues](./troubleshooting/ci-known-issues.md)
 
 # Contributing
 
