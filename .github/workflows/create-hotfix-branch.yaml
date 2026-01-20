@@ -1,0 +1,131 @@
+# Hotfix Branch Creation Workflow
+#
+# Creates a hotfix branch from main when an issue is labeled with 'hotfix'.
+# Only administrators can apply this label, ensuring controlled hotfix creation.
+#
+# Flow:
+# 1. Admin labels issue with 'hotfix'
+# 2. This workflow creates branch hotfix/<issue-number>
+# 3. Admin pushes fix to that branch
+# 4. Admin creates PR from hotfix/<issue-number> to main
+# 5. PR is reviewed and merged (bypass integration flow)
+# 6. Sync workflow updates integration with main changes
+
+name: Create Hotfix Branch
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  create-hotfix:
+    if: github.event.label.name == 'hotfix'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify admin permissions
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          # Get user's permission level
+          PERMISSION=$(gh api "repos/${{ github.repository }}/collaborators/${ACTOR}/permission" --jq '.permission')
+
+          if [[ "$PERMISSION" != "admin" ]]; then
+            echo "::error::Only administrators can create hotfix branches"
+            echo "::notice::User $ACTOR has permission level: $PERMISSION"
+            exit 1
+          fi
+
+          echo "::notice::Admin $ACTOR authorized to create hotfix branch"
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Create hotfix branch
+        id: create
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: |
+          BRANCH="hotfix/${ISSUE_NUMBER}"
+
+          # Check if branch already exists
+          if git ls-remote --exit-code origin "refs/heads/${BRANCH}" >/dev/null 2>&1; then
+            echo "::warning::Branch $BRANCH already exists"
+            echo "branch_exists=true" >> "$GITHUB_OUTPUT"
+            echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create and push branch
+          git checkout -b "$BRANCH"
+          git push origin "$BRANCH"
+
+          echo "branch_exists=false" >> "$GITHUB_OUTPUT"
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "::notice::Created branch $BRANCH from main"
+
+      - name: Comment on issue
+        if: steps.create.outputs.branch_exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          BRANCH: ${{ steps.create.outputs.branch }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "## Hotfix Branch Created
+
+          Branch \`$BRANCH\` has been created from \`main\`.
+
+          ### Next Steps
+
+          1. **Checkout the branch**:
+             \`\`\`bash
+             git fetch origin
+             git checkout $BRANCH
+             \`\`\`
+
+          2. **Make your fix** (use conventional commit format):
+             \`\`\`bash
+             git commit -m \"fix(component): description of fix
+
+             Fixes #$ISSUE_NUMBER\"
+             \`\`\`
+
+          3. **Push and create PR**:
+             \`\`\`bash
+             git push origin $BRANCH
+             gh pr create --base main --title \"fix: hotfix for #$ISSUE_NUMBER\"
+             \`\`\`
+
+          4. **After merge**: The sync workflow will automatically update \`integration\` with this fix.
+
+          ---
+          *This branch was automatically created by the hotfix workflow.*"
+
+      - name: Comment if branch exists
+        if: steps.create.outputs.branch_exists == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          BRANCH: ${{ steps.create.outputs.branch }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "## Hotfix Branch Already Exists
+
+          Branch \`$BRANCH\` already exists. Please use the existing branch or delete it first.
+
+          \`\`\`bash
+          git checkout $BRANCH
+          \`\`\`"

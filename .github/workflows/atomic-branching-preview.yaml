@@ -1,0 +1,314 @@
+# Atomic Branching Preview
+#
+# Phase 1 of atomization: Validates that a PR to integration can be
+# successfully atomized before allowing merge.
+#
+# This workflow:
+# 1. Analyzes changed files in the PR
+# 2. Categorizes them into atomic branches
+# 3. Performs dry-run cherry-pick verification
+# 4. Reports preview of branches that will be created
+# 5. Gates merge on atomization feasibility
+#
+# Status check: atomic-branching-preview (required for integration)
+
+name: Atomic Branching Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [integration]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  analyze:
+    name: Analyze Changes
+    runs-on: ubuntu-latest
+    outputs:
+      categories: ${{ steps.categorize.outputs.categories }}
+      dlq_files: ${{ steps.categorize.outputs.dlq_files }}
+      has_changes: ${{ steps.categorize.outputs.has_changes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          # Install yq for YAML parsing
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Load atomization library
+        id: load-lib
+        run: |
+          # Source the atomize library
+          source .github/actions/atomize/lib/atomize.sh
+          source .github/actions/atomize/lib/relationships.sh
+
+          # Verify library loaded
+          if ! declare -f match_branch_pattern &>/dev/null; then
+            echo "::error::Failed to load atomize library"
+            exit 1
+          fi
+          echo "::notice::Atomize library loaded successfully"
+
+      - name: Get changed files
+        id: changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Get list of changed files from the PR
+          FILES=$(gh pr diff ${{ github.event.pull_request.number }} --name-only)
+
+          if [[ -z "$FILES" ]]; then
+            echo "::notice::No files changed in PR"
+            echo "files=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Save to file for later use
+          echo "$FILES" > /tmp/changed-files.txt
+          echo "files<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$FILES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+          echo "::notice::Found $(echo "$FILES" | wc -l | tr -d ' ') changed files"
+
+      - name: Categorize files
+        id: categorize
+        run: |
+          source .github/actions/atomize/lib/atomize.sh
+          source .github/actions/atomize/lib/relationships.sh
+
+          if [[ ! -f /tmp/changed-files.txt ]]; then
+            echo "categories={}" >> "$GITHUB_OUTPUT"
+            echo "dlq_files=[]" >> "$GITHUB_OUTPUT"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          FILES=$(cat /tmp/changed-files.txt)
+          CATEGORIES="{}"
+          DLQ_FILES="[]"
+
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+
+            # Match file to branch pattern
+            branch=$(match_branch_pattern "$file")
+
+            if [[ -n "$branch" ]]; then
+              # Add to category
+              CATEGORIES=$(echo "$CATEGORIES" | jq --arg b "$branch" --arg f "$file" \
+                '.[$b] = ((.[$b] // []) + [$f])')
+              echo "::notice::$file → $branch"
+            else
+              # No match - goes to DLQ
+              DLQ_FILES=$(echo "$DLQ_FILES" | jq --arg f "$file" '. + [$f]')
+              echo "::warning::$file → DLQ (no pattern match)"
+            fi
+          done <<< "$FILES"
+
+          # Output results
+          echo "categories=$(echo "$CATEGORIES" | jq -c)" >> "$GITHUB_OUTPUT"
+          echo "dlq_files=$(echo "$DLQ_FILES" | jq -c)" >> "$GITHUB_OUTPUT"
+
+          # Check if we have any changes
+          if [[ $(echo "$CATEGORIES" | jq 'keys | length') -gt 0 ]]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  verify:
+    name: Verify Cherry-Pick
+    needs: analyze
+    if: needs.analyze.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJson(needs.analyze.outputs.categories) && fromJson(format('[{0}]', join(fromJson(needs.analyze.outputs.categories) | keys, ','))) || '[]' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Verify cherry-pick feasibility
+        id: verify
+        env:
+          BRANCH: ${{ matrix.branch }}
+          CATEGORIES: ${{ needs.analyze.outputs.categories }}
+        run: |
+          echo "::notice::Verifying cherry-pick for branch: $BRANCH"
+
+          # Get files for this branch
+          FILES=$(echo "$CATEGORIES" | jq -r --arg b "$BRANCH" '.[$b][]')
+
+          # Create temp branch from main
+          TEMP_BRANCH="temp-verify-$$"
+          git checkout -b "$TEMP_BRANCH" origin/main
+
+          # Try to checkout each file from the PR head
+          SUCCESS=true
+          for file in $FILES; do
+            echo "Checking: $file"
+            if ! git checkout ${{ github.event.pull_request.head.sha }} -- "$file" 2>/dev/null; then
+              echo "::error::Cannot extract $file to $BRANCH"
+              SUCCESS=false
+            fi
+          done
+
+          if [[ "$SUCCESS" == "true" ]]; then
+            # Verify we can commit
+            git add -A
+            if git diff --cached --quiet; then
+              echo "::notice::No changes to commit for $BRANCH"
+            else
+              git commit -m "test: verify $BRANCH extraction" --no-verify
+              echo "::notice::Cherry-pick verification passed for $BRANCH"
+            fi
+            echo "status=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+  preview:
+    name: Generate Preview
+    needs: [analyze, verify]
+    if: always() && needs.analyze.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate preview comment
+        id: preview
+        env:
+          CATEGORIES: ${{ needs.analyze.outputs.categories }}
+          DLQ_FILES: ${{ needs.analyze.outputs.dlq_files }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+        run: |
+          # Build preview markdown
+          {
+            echo "## 🔀 Atomic Branching Preview"
+            echo ""
+
+            if [[ "$VERIFY_RESULT" == "success" ]]; then
+              echo "✅ **All extractions verified successfully**"
+            elif [[ "$VERIFY_RESULT" == "failure" ]]; then
+              echo "❌ **Some extractions failed verification**"
+            else
+              echo "⚠️ **Verification status: $VERIFY_RESULT**"
+            fi
+
+            echo ""
+            echo "### Branches to be created"
+            echo ""
+            echo "| Branch | Files |"
+            echo "|--------|-------|"
+
+            # Parse categories and list
+            echo "$CATEGORIES" | jq -r 'to_entries[] | "| `\(.key)` | \(.value | length) files |"'
+
+            # List DLQ if any
+            DLQ_COUNT=$(echo "$DLQ_FILES" | jq 'length')
+            if [[ "$DLQ_COUNT" -gt 0 ]]; then
+              echo ""
+              echo "### ⚠️ Files with no matching pattern (DLQ)"
+              echo ""
+              echo "The following files don't match any branch pattern and will go to the DLQ:"
+              echo ""
+              echo "$DLQ_FILES" | jq -r '.[] | "- `\(.)`"'
+              echo ""
+              echo "> These files require manual categorization or pattern updates."
+            fi
+
+            echo ""
+            echo "---"
+            echo "<details>"
+            echo "<summary>File Details</summary>"
+            echo ""
+
+            echo "$CATEGORIES" | jq -r 'to_entries[] | "### \(.key)\n\(.value | map("- `\(.)`") | join("\n"))\n"'
+
+            echo "</details>"
+
+          } > /tmp/preview.md
+
+          # Save for comment
+          echo "preview<<EOF" >> "$GITHUB_OUTPUT"
+          cat /tmp/preview.md >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Post preview comment
+        uses: actions/github-script@v7
+        env:
+          PREVIEW: ${{ steps.preview.outputs.preview }}
+        with:
+          script: |
+            const preview = process.env.PREVIEW;
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' &&
+              c.body.includes('Atomic Branching Preview')
+            );
+
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: preview
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: preview
+              });
+            }
+
+  status:
+    name: atomic-branching-preview
+    needs: [analyze, verify, preview]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          if [[ "${{ needs.analyze.outputs.has_changes }}" != "true" ]]; then
+            echo "::notice::No changes require atomization"
+            exit 0
+          fi
+
+          if [[ "${{ needs.verify.result }}" == "success" ]]; then
+            echo "::notice::Atomization preview passed"
+            exit 0
+          else
+            echo "::error::Atomization preview failed - some files cannot be extracted cleanly"
+            exit 1
+          fi
