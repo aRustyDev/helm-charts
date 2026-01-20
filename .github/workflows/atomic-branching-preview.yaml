@@ -130,10 +130,26 @@ jobs:
     needs: analyze
     if: needs.analyze.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      branches: ${{ steps.branches.outputs.list }}
+    steps:
+      - name: Get branch list
+        id: branches
+        env:
+          CATEGORIES: ${{ needs.analyze.outputs.categories }}
+        run: |
+          BRANCHES=$(echo "$CATEGORIES" | jq -r 'keys | @json')
+          echo "list=$BRANCHES" >> "$GITHUB_OUTPUT"
+
+  verify-branches:
+    name: Verify Cherry-Pick
+    needs: [analyze, verify]
+    if: needs.analyze.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        branch: ${{ fromJson(needs.analyze.outputs.categories) && fromJson(format('[{0}]', join(fromJson(needs.analyze.outputs.categories) | keys, ','))) || '[]' }}
+        branch: ${{ fromJson(needs.verify.outputs.branches) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -188,7 +204,7 @@ jobs:
 
   preview:
     name: Generate Preview
-    needs: [analyze, verify]
+    needs: [analyze, verify-branches]
     if: always() && needs.analyze.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -200,7 +216,7 @@ jobs:
         env:
           CATEGORIES: ${{ needs.analyze.outputs.categories }}
           DLQ_FILES: ${{ needs.analyze.outputs.dlq_files }}
-          VERIFY_RESULT: ${{ needs.verify.result }}
+          VERIFY_RESULT: ${{ needs.verify-branches.result }}
         run: |
           # Build preview markdown
           {
@@ -294,7 +310,7 @@ jobs:
 
   status:
     name: atomic-branching-preview
-    needs: [analyze, verify, preview]
+    needs: [analyze, verify-branches, preview]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -305,7 +321,7 @@ jobs:
             exit 0
           fi
 
-          if [[ "${{ needs.verify.result }}" == "success" ]]; then
+          if [[ "${{ needs.verify-branches.result }}" == "success" ]]; then
             echo "::notice::Atomization preview passed"
             exit 0
           else
