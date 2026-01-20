@@ -231,7 +231,10 @@ jobs:
   # Phase 5.2: ArtifactHub metadata linting
   artifacthub-lint:
     needs: validate-and-detect
-    if: needs.validate-and-detect.outputs.has_charts == 'true'
+    if: |
+      always() &&
+      needs.validate-and-detect.result == 'success' &&
+      needs.validate-and-detect.outputs.has_charts == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -262,7 +265,10 @@ jobs:
   # Phase 5.3: Helm chart linting
   helm-lint:
     needs: validate-and-detect
-    if: needs.validate-and-detect.outputs.has_charts == 'true'
+    if: |
+      always() &&
+      needs.validate-and-detect.result == 'success' &&
+      needs.validate-and-detect.outputs.has_charts == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -294,7 +300,11 @@ jobs:
   k8s-matrix-test:
     name: k8s-test (${{ matrix.k8s_version }})
     needs: [validate-and-detect, helm-lint]
-    if: needs.validate-and-detect.outputs.has_charts == 'true'
+    if: |
+      always() &&
+      needs.validate-and-detect.result == 'success' &&
+      needs.helm-lint.result == 'success' &&
+      needs.validate-and-detect.outputs.has_charts == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
