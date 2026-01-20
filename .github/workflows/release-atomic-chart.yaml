@@ -24,6 +24,13 @@ on:
     tags:
       - '*-v*'  # Matches: cloudflared-v0.1.0, test-workflow-v1.2.3, etc.
 
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g., cloudflared-v0.1.0)'
+        required: true
+        type: string
+
 permissions:
   contents: write
   packages: write
@@ -50,9 +57,14 @@ jobs:
       - name: Parse Tag
         id: parse
         run: |
-          TAG="${GITHUB_REF_NAME}"
-
-          echo "::notice::Processing tag: $TAG"
+          # Use input tag if workflow_dispatch, otherwise use GITHUB_REF_NAME
+          if [[ -n "${{ inputs.tag }}" ]]; then
+            TAG="${{ inputs.tag }}"
+            echo "::notice::Using input tag: $TAG"
+          else
+            TAG="${GITHUB_REF_NAME}"
+            echo "::notice::Processing tag: $TAG"
+          fi
 
           # Validate tag format: <chart>-v<version>
           # Chart names can contain hyphens, so we match from the right
@@ -75,6 +87,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.parse.outputs.tag }}
 
       - name: Validate Chart Exists
         id: validate
