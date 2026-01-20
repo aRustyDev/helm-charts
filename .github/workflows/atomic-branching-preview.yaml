@@ -220,15 +220,15 @@ jobs:
         run: |
           # Build preview markdown
           {
-            echo "## 🔀 Atomic Branching Preview"
+            echo "## Atomic Branching Preview"
             echo ""
 
             if [[ "$VERIFY_RESULT" == "success" ]]; then
-              echo "✅ **All extractions verified successfully**"
+              echo "All extractions verified successfully"
             elif [[ "$VERIFY_RESULT" == "failure" ]]; then
-              echo "❌ **Some extractions failed verification**"
+              echo "Some extractions failed verification"
             else
-              echo "⚠️ **Verification status: $VERIFY_RESULT**"
+              echo "Verification status: $VERIFY_RESULT"
             fi
 
             echo ""
@@ -244,7 +244,7 @@ jobs:
             DLQ_COUNT=$(echo "$DLQ_FILES" | jq 'length')
             if [[ "$DLQ_COUNT" -gt 0 ]]; then
               echo ""
-              echo "### ⚠️ Files with no matching pattern (DLQ)"
+              echo "### Files with no matching pattern (DLQ)"
               echo ""
               echo "The following files don't match any branch pattern and will go to the DLQ:"
               echo ""
