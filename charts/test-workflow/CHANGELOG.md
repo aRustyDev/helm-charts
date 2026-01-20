@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.2] - 2026-01-20
+
+### Changed
+- E2E-2 test: validate tag-based W6 workflow
+
 ## [0.1.1] - 2026-01-20
 
 ### Changed
