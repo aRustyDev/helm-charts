@@ -36,7 +36,7 @@ entries:
         url: https://keybase.io/communitycharts/pgp_keys.asc
     apiVersion: v2
     appVersion: 2025.11.1
-    created: "2026-01-17T00:48:09.250335-05:00"
+    created: "2026-01-20T23:32:59.948499817Z"
     description: A Helm chart for Cloudflare Tunnel (cloudflared)
     digest: 39eaebbfb78866fba04b95ec62aa7b3d40214a1508908c14765c9925a3999c4d
     home: https://github.com/cloudflare/cloudflared
@@ -70,7 +70,7 @@ entries:
     - https://github.com/cloudflare/cloudflared
     type: application
     urls:
-    - https://github.com/aRustyDev/helm-charts/releases/download/cloudflared-v0.4.2/cloudflared-0.4.2.tgz
+    - https://github.com/aRustyDev/helm-charts/releases/download/test-workflow-v0.1.2/cloudflared-0.4.2.tgz
     version: 0.4.2
   - annotations:
       artifacthub.io/alternativeName: cloudflare
@@ -306,4 +306,45 @@ entries:
     urls:
     - https://github.com/aRustyDev/helm-charts/releases/download/mdbook-htmx-0.1.0/mdbook-htmx-0.1.0.tgz
     version: 0.1.0
-generated: "2026-01-17T00:48:09.248281-05:00"
+  test-workflow:
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2026-01-20T23:32:59.94874869Z"
+    description: Test chart for E2E workflow validation
+    digest: ce441570dc0a987a9bd5ee05f34d0836efe41f5328f416fd136fac5efdf44aa1
+    home: https://github.com/aRustyDev/helm-charts
+    keywords:
+    - test
+    - e2e
+    - workflow
+    maintainers:
+    - name: aRustyDev
+      url: https://github.com/aRustyDev
+    name: test-workflow
+    sources:
+    - https://github.com/aRustyDev/helm-charts
+    type: application
+    urls:
+    - https://github.com/aRustyDev/helm-charts/releases/download/test-workflow-v0.1.2/test-workflow-0.1.2.tgz
+    version: 0.1.2
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2026-01-20T23:32:59.948967767Z"
+    description: Test chart for E2E workflow validation
+    digest: ce441570dc0a987a9bd5ee05f34d0836efe41f5328f416fd136fac5efdf44aa1
+    home: https://github.com/aRustyDev/helm-charts
+    keywords:
+    - test
+    - e2e
+    - workflow
+    maintainers:
+    - name: aRustyDev
+      url: https://github.com/aRustyDev
+    name: test-workflow
+    sources:
+    - https://github.com/aRustyDev/helm-charts
+    type: application
+    urls:
+    - https://github.com/aRustyDev/helm-charts/releases/download/test-workflow-v0.1.2/packages/test-workflow-0.1.2.tgz
+    version: 0.1.2
+generated: "2026-01-20T23:32:59.947195703Z"
