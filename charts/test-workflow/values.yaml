@@ -16,3 +16,8 @@ service:
   port: 80
 
 resources: {}
+
+# E2E test configuration
+e2e:
+  enabled: true
+  message: "Hello from E2E test"

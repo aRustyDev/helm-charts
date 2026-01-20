@@ -6,3 +6,6 @@ metadata:
     {{- include "test-workflow.labels" . | nindent 4 }}
 data:
   test-key: "test-value"
+  {{- if .Values.e2e.enabled }}
+  e2e-message: {{ .Values.e2e.message | quote }}
+  {{- end }}
