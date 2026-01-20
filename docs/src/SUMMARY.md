@@ -34,6 +34,10 @@
   - [ADR-005: CI/CD Workflow Architecture](./adr/005-ci-workflows.md)
   - [ADR-006: Release-Please for Helm Chart Versioning](./adr/006-release-please-versioning.md)
   - [ADR-007: Separate Chart-Testing Configs](./adr/007-separate-ct-configs.md)
+  - [ADR-008: Repository Dispatch for Workflow Automation](./adr/008-repository-dispatch-automation.md)
+  - [ADR-009: Trust-Based Auto-Merge for Integration](./adr/009-integration-auto-merge.md)
+  - [ADR-010: Linear History and Rebase Workflow](./adr/010-linear-history-rebase.md)
+  - [ADR-011: Full Atomization Model](./adr/011-full-atomization-model.md)
 
 # Security
 
@@ -43,3 +47,5 @@
 
 - [Development Guide](./contributing/development.md)
 - [Creating a New Chart](./contributing/new-chart.md)
+- [Commit Conventions](./contributing/commit-conventions.md)
+- [Atomization Workflow](./contributing/atomization.md)

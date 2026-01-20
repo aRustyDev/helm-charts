@@ -69,7 +69,9 @@ helm template my-release charts/my-chart -s templates/deployment.yaml
 
 ## Commit Convention
 
-All commits must follow [Conventional Commits](https://www.conventionalcommits.org/):
+All commits must follow [Conventional Commits](https://www.conventionalcommits.org/).
+
+**Quick Reference**:
 
 ```
 <type>(<scope>): <description>
@@ -79,37 +81,35 @@ All commits must follow [Conventional Commits](https://www.conventionalcommits.o
 [optional footer]
 ```
 
-### Types
-
 | Type | Description | Version Bump |
 |------|-------------|--------------|
 | `feat` | New feature | Minor |
 | `fix` | Bug fix | Patch |
 | `docs` | Documentation | None |
-| `style` | Formatting | None |
-| `refactor` | Code restructure | None |
-| `test` | Tests | None |
 | `chore` | Maintenance | None |
-
-### Scope
 
 Use the chart name as scope:
 
 ```bash
-feat(holmes): add horizontal pod autoscaler
-fix(mdbook-htmx): correct service port
-docs(holmes): update installation guide
+feat(cloudflared): add horizontal pod autoscaler
+fix(cloudflared): correct service port
+docs(cloudflared): update installation guide
 ```
 
-### Breaking Changes
+For complete documentation including breaking changes, relationship footers, and bundling commits, see the [Commit Conventions Guide](commit-conventions.md).
 
-Add `!` after type or `BREAKING CHANGE:` in footer:
+## Atomization Workflow
 
-```bash
-feat(holmes)!: restructure values schema
+When you submit a PR to `integration`, your changes are automatically extracted into atomic branches and PRs to `main`.
 
-BREAKING CHANGE: `olmOperator` renamed to `olm.operator`
 ```
+Your PR → integration → atomization → chart/cloudflared → main
+                                    → docs/cloudflared  → main
+```
+
+This ensures clean CHANGELOGs and independent review of different content types.
+
+For details on relating changes across categories, see the [Atomization Workflow Guide](atomization.md).
 
 ## Pull Request Workflow
 
