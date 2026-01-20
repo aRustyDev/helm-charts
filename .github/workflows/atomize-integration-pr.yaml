@@ -12,6 +12,9 @@
 #
 # Failure handling: If any step fails, cleanup pushed branches and
 # do NOT reset integration.
+#
+# Authentication: Uses GitHub App token for elevated permissions
+# Required secrets: OP_SERVICE_ACCOUNT_TOKEN (1Password)
 
 name: Atomize Integration PR
 
@@ -31,6 +34,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  generate-token:
+    name: Generate App Token
+    runs-on: ubuntu-latest
+    outputs:
+      token: ${{ steps.app-token.outputs.token }}
+    steps:
+      - name: Load secrets from 1Password
+        id: op-secrets
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: false
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          X_REPO_AUTH_APP_ID: op://gh-shared/xauth/app/id
+          X_REPO_AUTH_PRIVATE_KEY: op://gh-shared/xauth/app/private-key.pem
+
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
+          private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
+
   should-run:
     name: Check Trigger
     runs-on: ubuntu-latest
@@ -50,7 +76,7 @@ jobs:
 
   analyze:
     name: Analyze Merged PR
-    needs: should-run
+    needs: [generate-token, should-run]
     if: needs.should-run.outputs.run == 'true'
     runs-on: ubuntu-latest
     outputs:
@@ -64,6 +90,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: integration
+          token: ${{ needs.generate-token.outputs.token }}
 
       - name: Install dependencies
         run: |
@@ -73,7 +100,7 @@ jobs:
       - name: Get changed files from merged PR
         id: changed
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ needs.generate-token.outputs.token }}
         run: |
           # Get files that were in the merged PR
           FILES=$(gh pr diff ${{ github.event.pull_request.number }} --name-only)
@@ -113,7 +140,7 @@ jobs:
 
   extract:
     name: Extract to Atomic Branches
-    needs: analyze
+    needs: [generate-token, analyze]
     if: needs.analyze.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
     outputs:
@@ -124,7 +151,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ needs.generate-token.outputs.token }}
 
       - name: Configure git
         run: |
@@ -195,7 +222,7 @@ jobs:
       - name: Create PRs (Pass 1)
         id: create-prs
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ needs.generate-token.outputs.token }}
           BRANCHES: ${{ steps.extract.outputs.branches }}
           SOURCE_PR: ${{ needs.analyze.outputs.source_pr }}
         run: |
@@ -232,7 +259,7 @@ jobs:
 
       - name: Update PRs with related links (Pass 2)
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ needs.generate-token.outputs.token }}
           PR_MAP: ${{ steps.create-prs.outputs.prs }}
           SOURCE_PR: ${{ needs.analyze.outputs.source_pr }}
         shell: bash
@@ -264,7 +291,7 @@ jobs:
 
   handle-dlq:
     name: Handle DLQ Files
-    needs: analyze
+    needs: [generate-token, analyze]
     if: needs.analyze.outputs.dlq_files != '[]' && needs.analyze.outputs.dlq_files != ''
     runs-on: ubuntu-latest
     steps:
@@ -272,7 +299,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ needs.generate-token.outputs.token }}
 
       - name: Configure git
         run: |
@@ -308,7 +335,7 @@ jobs:
 
       - name: Create DLQ issue
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ needs.generate-token.outputs.token }}
           DLQ_FILES: ${{ needs.analyze.outputs.dlq_files }}
           SOURCE_PR: ${{ needs.analyze.outputs.source_pr }}
         shell: bash
@@ -341,7 +368,7 @@ jobs:
 
   reset-integration:
     name: Reset Integration
-    needs: [analyze, extract]
+    needs: [generate-token, analyze, extract]
     if: always() && needs.analyze.outputs.has_changes == 'true' && needs.extract.result == 'success'
     runs-on: ubuntu-latest
     steps:
@@ -349,7 +376,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ needs.generate-token.outputs.token }}
 
       - name: Configure git
         run: |
@@ -357,7 +384,12 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Reset integration to main
+        env:
+          GH_TOKEN: ${{ needs.generate-token.outputs.token }}
         run: |
+          # Use the app token for authenticated push
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git fetch origin main integration
           git checkout integration
           git reset --hard origin/main
           git push origin integration --force-with-lease
@@ -365,13 +397,13 @@ jobs:
 
   cleanup-on-failure:
     name: Cleanup on Failure
-    needs: [analyze, extract]
+    needs: [generate-token, analyze, extract]
     if: failure() && needs.extract.result == 'failure'
     runs-on: ubuntu-latest
     steps:
       - name: Delete created branches
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ needs.generate-token.outputs.token }}
           BRANCHES: ${{ needs.extract.outputs.created_branches }}
         run: |
           if [[ -z "$BRANCHES" ]] || [[ "$BRANCHES" == "[]" ]]; then
@@ -388,7 +420,7 @@ jobs:
 
       - name: Create failure issue
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ needs.generate-token.outputs.token }}
           SOURCE_PR: ${{ needs.analyze.outputs.source_pr }}
           WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         shell: bash
@@ -418,7 +450,7 @@ jobs:
 
   summary:
     name: Summary
-    needs: [analyze, extract, handle-dlq, reset-integration]
+    needs: [generate-token, analyze, extract, handle-dlq, reset-integration]
     if: always() && needs.analyze.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
     steps:
