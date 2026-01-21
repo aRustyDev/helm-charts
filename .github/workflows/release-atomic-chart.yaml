@@ -24,12 +24,10 @@ on:
     tags:
       - '*-v*'  # Matches: cloudflared-v0.1.0, test-workflow-v1.2.3, etc.
 
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to release (e.g., cloudflared-v0.1.0)'
-        required: true
-        type: string
+  # Manual trigger via GitHub API with App token (more secure than workflow_dispatch)
+  # Usage: gh api repos/:owner/:repo/dispatches -f event_type=release-chart -f client_payload='{"tag":"cloudflared-v0.1.0"}'
+  repository_dispatch:
+    types: [release-chart]
 
 permissions:
   contents: write
@@ -39,7 +37,7 @@ permissions:
   attestations: write
 
 concurrency:
-  group: chart-release-${{ github.ref_name }}
+  group: chart-release-${{ github.event_name == 'repository_dispatch' && github.event.client_payload.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -57,14 +55,20 @@ jobs:
       - name: Parse Tag
         id: parse
         run: |
-          # Use input tag if workflow_dispatch, otherwise use GITHUB_REF_NAME
-          if [[ -n "${{ inputs.tag }}" ]]; then
-            TAG="${{ inputs.tag }}"
-            echo "::notice::Using input tag: $TAG"
+          # Determine tag from trigger type
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            TAG="${{ github.event.client_payload.tag }}"
+            if [[ -z "$TAG" ]]; then
+              echo "::error::repository_dispatch requires client_payload.tag"
+              echo "::error::Usage: gh api repos/:owner/:repo/dispatches -f event_type=release-chart -f client_payload='{\"tag\":\"chart-v1.0.0\"}'"
+              exit 1
+            fi
+            echo "::notice::Manual release via repository_dispatch"
           else
             TAG="${GITHUB_REF_NAME}"
-            echo "::notice::Processing tag: $TAG"
           fi
+
+          echo "::notice::Processing tag: $TAG"
 
           # Validate tag format: <chart>-v<version>
           # Chart names can contain hyphens, so we match from the right
@@ -515,7 +519,8 @@ jobs:
             echo "## Release Atomic Chart - Summary"
             echo ""
             echo "### Tag Information"
-            echo "- **Tag**: ${{ github.ref_name }}"
+            echo "- **Tag**: ${{ needs.validate-tag.outputs.tag }}"
+            echo "- **Trigger**: ${{ github.event_name }}"
             echo "- **Chart**: ${{ needs.validate-tag.outputs.chart }}"
             echo "- **Version**: ${{ needs.validate-tag.outputs.version }}"
             echo ""
