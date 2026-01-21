@@ -33,14 +33,9 @@ jobs:
       tags_created: ${{ steps.create-tags.outputs.tags_created }}
       charts: ${{ steps.detect.outputs.charts }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Load secrets from 1Password
         id: op-secrets
-        uses: 1password/load-secrets-action@v2
+        uses: 1password/load-secrets-action@v3
         with:
           export-env: false
         env:
@@ -54,6 +49,12 @@ jobs:
         with:
           app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
           private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure Git
         run: |
