@@ -200,7 +200,7 @@ jobs:
           subject-path: ${{ steps.build.outputs.package }}
 
       - name: Upload Package Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: chart-package-${{ needs.validate-tag.outputs.chart }}-${{ needs.validate-tag.outputs.version }}
           path: ${{ steps.build.outputs.package }}
@@ -215,7 +215,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download Package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: chart-package-${{ needs.validate-tag.outputs.chart }}-${{ needs.validate-tag.outputs.version }}
           path: .cr-release-packages/
@@ -242,7 +242,7 @@ jobs:
 
       - name: Load secrets from 1Password
         id: op-secrets
-        uses: 1password/load-secrets-action@v2
+        uses: 1password/load-secrets-action@v3
         with:
           export-env: false
         env:
@@ -422,7 +422,7 @@ jobs:
     steps:
       - name: Load secrets from 1Password
         id: op-secrets
-        uses: 1password/load-secrets-action@v2
+        uses: 1password/load-secrets-action@v3
         with:
           export-env: false
         env:
@@ -454,7 +454,7 @@ jobs:
           version: 'latest'
 
       - name: Download Package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: chart-package-${{ needs.validate-tag.outputs.chart }}-${{ needs.validate-tag.outputs.version }}
           path: packages/

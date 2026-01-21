@@ -1,16 +1,21 @@
-# Workflow 2: Filter Charts
+# Workflow 2: Filter Charts & Dependencies
 #
-# Detects charts changed in the integration branch and creates per-chart
-# branches for atomic processing with PRs to main.
+# Detects changes in the integration branch and creates atomic branches
+# for processing with PRs to main.
 #
-# Trigger: Push to integration branch with changes to charts/**
+# Handles two types of changes:
+#   1. Chart changes (charts/**) → per-chart branches (charts/<chart>)
+#   2. Dependency updates (.github/workflows/**) → ci/dependencies branch
+#
+# Trigger: Push to integration branch with changes to charts/** or .github/workflows/**
 #
 # Jobs:
-#   - detect-changes: Identify changed charts and source PR
+#   - detect-changes: Identify changed charts/dependencies and source PR
 #   - process-charts: Create/update per-chart branches and PRs to main
+#   - process-dependencies: Create/update ci/dependencies branch and PR to main
 #
-# Each processed chart gets:
-#   - A dedicated `charts/<chart>` branch
+# Each processed change gets:
+#   - A dedicated atomic branch
 #   - A PR to main with the attestation map from the source PR
 #
 # See: .claude/plans/chart-release-workflows/workflow-2/plan.md
@@ -23,6 +28,7 @@ on:
       - integration
     paths:
       - 'charts/**'
+      - '.github/workflows/**'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -57,15 +63,18 @@ jobs:
       charts: ${{ steps.detect.outputs.charts }}
       charts_json: ${{ steps.detect.outputs.charts_json }}
       charts_count: ${{ steps.detect.outputs.charts_count }}
+      has_dependency_changes: ${{ steps.detect.outputs.has_dependency_changes }}
+      dependency_files: ${{ steps.detect.outputs.dependency_files }}
       source_pr: ${{ steps.source.outputs.pr_number }}
       attestation_map: ${{ steps.source.outputs.attestation_map }}
+      is_dependabot: ${{ steps.source.outputs.is_dependabot }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Detect changed charts
+      - name: Detect changed charts and dependencies
         id: detect
         run: |
           source .github/scripts/attestation-lib.sh
@@ -81,9 +90,12 @@ jobs:
             echo "::notice::Detected squash/regular commit, using range: $RANGE"
           fi
 
-          # Get changed charts, filtering out non-chart files
+          # Get all changed files
+          CHANGED_FILES=$(git diff --name-only "$RANGE")
+
+          # === Detect chart changes ===
           CHARTS=""
-          for dir in $(git diff --name-only "$RANGE" | grep '^charts/' | cut -d'/' -f2 | sort -u); do
+          for dir in $(echo "$CHANGED_FILES" | grep '^charts/' | cut -d'/' -f2 | sort -u); do
             # Only include if it's an actual chart (has Chart.yaml)
             if [[ -f "charts/$dir/Chart.yaml" ]]; then
               CHARTS="$CHARTS $dir"
@@ -110,6 +122,20 @@ jobs:
             echo "charts_count=$CHARTS_COUNT" >> "$GITHUB_OUTPUT"
           fi
 
+          # === Detect dependency (workflow) changes ===
+          DEPENDENCY_FILES=$(echo "$CHANGED_FILES" | grep '^\.github/workflows/' || true)
+
+          if [[ -n "$DEPENDENCY_FILES" ]]; then
+            echo "::notice::Dependency (workflow) changes detected"
+            echo "has_dependency_changes=true" >> "$GITHUB_OUTPUT"
+            # Store as space-separated for later use
+            echo "dependency_files=$(echo "$DEPENDENCY_FILES" | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No dependency changes detected"
+            echo "has_dependency_changes=false" >> "$GITHUB_OUTPUT"
+            echo "dependency_files=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Find source PR
         id: source
         env:
@@ -124,9 +150,19 @@ jobs:
             echo "::warning::Could not find source PR for commit"
             echo "pr_number=" >> "$GITHUB_OUTPUT"
             echo "attestation_map={}" >> "$GITHUB_OUTPUT"
+            echo "is_dependabot=false" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::Source PR: #$SOURCE_PR"
             echo "pr_number=$SOURCE_PR" >> "$GITHUB_OUTPUT"
+
+            # Check if source PR is from dependabot
+            PR_AUTHOR=$(gh pr view "$SOURCE_PR" --json author --jq '.author.login')
+            if [[ "$PR_AUTHOR" == "dependabot[bot]" ]]; then
+              echo "::notice::Source PR is from dependabot"
+              echo "is_dependabot=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "is_dependabot=false" >> "$GITHUB_OUTPUT"
+            fi
 
             # Extract attestation map from source PR
             ATTESTATION_MAP=$(extract_attestation_map "$SOURCE_PR")
@@ -445,20 +481,199 @@ jobs:
           echo "*PRs to main have been created/updated for each chart.*" >> $GITHUB_STEP_SUMMARY
 
   #############################################################################
+  # Process Dependencies (ci/dependencies branch)
+  #############################################################################
+  process-dependencies:
+    name: Process Dependencies
+    needs: detect-changes
+    if: >-
+      needs.detect-changes.outputs.has_dependency_changes == 'true' &&
+      needs.detect-changes.outputs.is_dependabot == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create/update ci/dependencies branch
+        id: branch
+        env:
+          SOURCE_PR: ${{ needs.detect-changes.outputs.source_pr }}
+          DEPENDENCY_FILES: ${{ needs.detect-changes.outputs.dependency_files }}
+        run: |
+          set -e
+          BRANCH="ci/dependencies"
+
+          echo "::group::Branch operations for dependencies"
+
+          # Check if branch exists remotely
+          if git ls-remote --heads origin "$BRANCH" | grep -q "$BRANCH"; then
+            echo "::notice::Branch $BRANCH exists, fetching..."
+            git fetch origin "$BRANCH"
+            git checkout -B "$BRANCH" "origin/$BRANCH"
+          else
+            echo "::notice::Creating new branch: $BRANCH from origin/main"
+            git checkout -b "$BRANCH" origin/main
+          fi
+
+          # Copy changed workflow files from the integration branch commit
+          for file in $DEPENDENCY_FILES; do
+            if [[ -f "$file" ]]; then
+              # Ensure directory exists
+              mkdir -p "$(dirname "$file")"
+              git checkout "${{ github.sha }}" -- "$file"
+              echo "::notice::Copied $file"
+            fi
+          done
+
+          # Check if there are changes to commit
+          if git diff --cached --quiet && git diff --quiet; then
+            echo "::notice::No changes to commit for dependencies"
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+            echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+            echo "::endgroup::"
+            exit 0
+          fi
+
+          # Stage and commit
+          git add .github/workflows/
+
+          # Create commit message with source PR reference
+          COMMIT_MSG="ci(deps): sync dependency updates from integration"
+          if [[ -n "$SOURCE_PR" ]]; then
+            COMMIT_MSG="${COMMIT_MSG}"$'\n\n'"Source-PR: #${SOURCE_PR}"
+          fi
+
+          git commit -m "$COMMIT_MSG"
+
+          # Push
+          git push origin "$BRANCH" --force-with-lease
+          echo "::notice::Successfully pushed $BRANCH"
+          echo "updated=true" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+          echo "::endgroup::"
+
+      - name: Create/update PR to main
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_PR: ${{ needs.detect-changes.outputs.source_pr }}
+          ATTESTATION_MAP: ${{ needs.detect-changes.outputs.attestation_map }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          BRANCH="ci/dependencies"
+
+          echo "::group::PR operations for dependencies"
+
+          # Check for existing PR
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --base "$TARGET_BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          # Build PR body
+          {
+            echo "## CI Dependencies Update"
+            echo ""
+            echo "Promoting dependency updates from integration branch to main."
+            echo ""
+            echo "### Source"
+            if [[ -n "$SOURCE_PR" ]]; then
+              echo "- Source PR: #$SOURCE_PR"
+            else
+              echo "- Source PR: _(not found)_"
+            fi
+            echo "- Source Branch: integration"
+            echo "- Source Commit: \`$COMMIT_SHA\`"
+            echo ""
+            echo "### Changes"
+            echo "This PR contains GitHub Actions dependency updates from dependabot."
+            echo ""
+            echo "<!-- ATTESTATION_MAP"
+            echo "$ATTESTATION_MAP"
+            echo "-->"
+            echo ""
+            echo "---"
+            echo "*This PR was automatically created by W2 - Filter Charts workflow.*"
+          } > pr_body.md
+
+          PR_BODY=$(cat pr_body.md)
+
+          if [[ -n "$EXISTING_PR" ]]; then
+            echo "::notice::Updating existing PR #$EXISTING_PR for dependencies"
+            gh pr edit "$EXISTING_PR" --body "$PR_BODY"
+            echo "pr_number=$EXISTING_PR" >> "$GITHUB_OUTPUT"
+            echo "pr_action=updated" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Creating new PR for dependencies"
+            NEW_PR=$(gh pr create \
+              --head "$BRANCH" \
+              --base "$TARGET_BRANCH" \
+              --title "ci(deps): promote dependency updates to main" \
+              --body "$PR_BODY" 2>&1 || true)
+
+            if [[ "$NEW_PR" =~ github.com/.*/pull/([0-9]+) ]]; then
+              PR_NUM="${BASH_REMATCH[1]}"
+              echo "::notice::Created PR #$PR_NUM"
+              echo "pr_number=$PR_NUM" >> "$GITHUB_OUTPUT"
+              echo "pr_action=created" >> "$GITHUB_OUTPUT"
+            else
+              EXISTING_PR=$(gh pr list --head "$BRANCH" --base "$TARGET_BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+              if [[ -n "$EXISTING_PR" ]]; then
+                echo "::notice::PR #$EXISTING_PR already exists (race condition)"
+                gh pr edit "$EXISTING_PR" --body "$PR_BODY"
+                echo "pr_number=$EXISTING_PR" >> "$GITHUB_OUTPUT"
+                echo "pr_action=updated" >> "$GITHUB_OUTPUT"
+              else
+                echo "::error::Failed to create PR: $NEW_PR"
+                echo "pr_number=" >> "$GITHUB_OUTPUT"
+                echo "pr_action=failed" >> "$GITHUB_OUTPUT"
+              fi
+            fi
+          fi
+
+          echo "::endgroup::"
+
+      - name: Summary
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          PR_ACTION: ${{ steps.pr.outputs.pr_action }}
+          DEPENDENCY_FILES: ${{ needs.detect-changes.outputs.dependency_files }}
+        run: |
+          echo "## W2 - Dependencies Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Branch" >> $GITHUB_STEP_SUMMARY
+          echo "- **Atomic Branch**: \`ci/dependencies\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **PR**: #$PR_NUMBER ($PR_ACTION)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Files Updated" >> $GITHUB_STEP_SUMMARY
+          for file in $DEPENDENCY_FILES; do
+            echo "- \`$file\`" >> $GITHUB_STEP_SUMMARY
+          done
+
+  #############################################################################
   # Handle no-change scenario
   #############################################################################
   no-changes:
     name: No Changes
     needs: detect-changes
-    if: needs.detect-changes.outputs.charts_count == '0'
+    if: >-
+      needs.detect-changes.outputs.charts_count == '0' &&
+      needs.detect-changes.outputs.has_dependency_changes != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Summary
         run: |
           echo "## W2 - Filter Charts Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo ":information_source: No chart changes detected in this push." >> $GITHUB_STEP_SUMMARY
+          echo ":information_source: No actionable changes detected in this push." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "This can happen when:" >> $GITHUB_STEP_SUMMARY
           echo "- Changes were made to non-chart files in the charts/ directory" >> $GITHUB_STEP_SUMMARY
           echo "- The charts/ path filter matched but no actual chart directories changed" >> $GITHUB_STEP_SUMMARY
+          echo "- Workflow changes were not from dependabot (manual review required)" >> $GITHUB_STEP_SUMMARY
