@@ -1,0 +1,345 @@
+# Sync Main to Branches Workflow
+#
+# After any push to main, this workflow syncs configured branches.
+# Supports multiple branch patterns with configurable sync strategies.
+#
+# Branch Patterns and Strategies:
+# - integration: rebase (preserves unique commits)
+# - hotfix/*: ff-only (fast-forward only, skip if diverged)
+# - charts/*: ff-only (fast-forward only, skip if diverged)
+# - docs/*: ff-only (fast-forward only, skip if diverged)
+#
+# Configuration via repository variable SYNC_BRANCH_CONFIG:
+#   Format: "pattern1:strategy,pattern2:strategy"
+#   Example: "integration:rebase,hotfix/*:ff-only,charts/*:ff-only"
+
+name: Sync Main to Branches
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Specific branch to sync (leave empty for all)'
+        required: false
+        type: string
+      force:
+        description: 'Force sync even if branch appears up to date'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  issues: write
+
+# Prevent concurrent syncs to the same branches
+concurrency:
+  group: sync-main-to-branches
+  cancel-in-progress: false
+
+env:
+  # Default configuration if repository variable not set
+  # Format: branch_pattern:strategy (rebase or ff-only)
+  DEFAULT_CONFIG: 'integration:rebase'
+  # Maximum branches to process in one run (prevent runaway matrix)
+  MAX_BRANCHES: '20'
+
+jobs:
+  discover-branches:
+    name: Discover Branches
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+      count: ${{ steps.discover.outputs.count }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Discover branches to sync
+        id: discover
+        env:
+          CONFIG: ${{ vars.SYNC_BRANCH_CONFIG || env.DEFAULT_CONFIG }}
+          TARGET: ${{ inputs.target_branch }}
+          FORCE: ${{ inputs.force }}
+          MAX_BRANCHES: ${{ env.MAX_BRANCHES }}
+        run: |
+          ENTRIES=()
+          COUNT=0
+
+          echo "::notice::Configuration: $CONFIG"
+          echo "::notice::Target filter: ${TARGET:-all}"
+          echo "::notice::Force mode: ${FORCE:-false}"
+
+          # Parse config
+          IFS=',' read -ra CONFIGS <<< "$CONFIG"
+          for config in "${CONFIGS[@]}"; do
+            IFS=':' read -r pattern strategy <<< "$config"
+            [[ -z "$pattern" ]] && continue
+
+            # If target specified, only process matching patterns
+            if [[ -n "$TARGET" ]]; then
+              # Check if target matches this pattern or is the exact branch
+              if [[ "$TARGET" != "$pattern" && ! "$TARGET" =~ ^${pattern/\*/.*}$ ]]; then
+                continue
+              fi
+            fi
+
+            # Find matching remote branches
+            for branch in $(git for-each-ref --format='%(refname:short)' "refs/remotes/origin/${pattern}" 2>/dev/null | sed 's|origin/||'); do
+              # Skip main itself
+              [[ "$branch" == "main" ]] && continue
+
+              # If target is specific branch, only include that branch
+              if [[ -n "$TARGET" && "$TARGET" != "$pattern" && "$TARGET" != "$branch" ]]; then
+                continue
+              fi
+
+              # Enforce max branches limit
+              if [[ $COUNT -ge $MAX_BRANCHES ]]; then
+                echo "::warning::Reached max branches limit ($MAX_BRANCHES), skipping remaining"
+                break 2
+              fi
+
+              ENTRIES+=("{\"branch\":\"$branch\",\"strategy\":\"${strategy:-ff-only}\",\"force\":\"${FORCE:-false}\"}")
+              echo "::notice::Will sync: $branch (strategy: ${strategy:-ff-only})"
+              ((COUNT++))
+            done
+          done
+
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
+          if [[ ${#ENTRIES[@]} -eq 0 ]]; then
+            echo "::notice::No branches to sync"
+            echo "matrix={\"include\":[]}" >> "$GITHUB_OUTPUT"
+          else
+            MATRIX=$(printf '%s,' "${ENTRIES[@]}" | sed 's/,$//')
+            echo "matrix={\"include\":[$MATRIX]}" >> "$GITHUB_OUTPUT"
+            echo "::notice::Total branches to sync: ${#ENTRIES[@]}"
+          fi
+
+  sync-branch:
+    name: Sync ${{ matrix.branch }}
+    needs: discover-branches
+    if: fromJson(needs.discover-branches.outputs.matrix).include[0] != null
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.discover-branches.outputs.matrix) }}
+      fail-fast: false
+      max-parallel: 3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Analyze branch relationship
+        id: analyze
+        env:
+          BRANCH: ${{ matrix.branch }}
+        run: |
+          git fetch origin main "$BRANCH"
+
+          MAIN_SHA=$(git rev-parse origin/main)
+          BRANCH_SHA=$(git rev-parse "origin/$BRANCH")
+          MERGE_BASE=$(git merge-base origin/main "origin/$BRANCH" 2>/dev/null || echo "none")
+
+          echo "main_sha=$MAIN_SHA" >> "$GITHUB_OUTPUT"
+          echo "branch_sha=$BRANCH_SHA" >> "$GITHUB_OUTPUT"
+          echo "merge_base=$MERGE_BASE" >> "$GITHUB_OUTPUT"
+
+          echo "::notice::Main SHA: $MAIN_SHA"
+          echo "::notice::$BRANCH SHA: $BRANCH_SHA"
+          echo "::notice::Merge base: $MERGE_BASE"
+
+          if [[ "$MERGE_BASE" == "none" ]]; then
+            echo "status=unrelated" >> "$GITHUB_OUTPUT"
+            echo "::warning::$BRANCH has no common ancestor with main"
+          elif [[ "$MAIN_SHA" == "$BRANCH_SHA" ]]; then
+            echo "status=equal" >> "$GITHUB_OUTPUT"
+            echo "::notice::$BRANCH is equal to main"
+          elif [[ "$MERGE_BASE" == "$MAIN_SHA" ]]; then
+            echo "status=ahead" >> "$GITHUB_OUTPUT"
+            AHEAD_COUNT=$(git rev-list --count "origin/main..origin/$BRANCH")
+            echo "::notice::$BRANCH is ahead of main by $AHEAD_COUNT commits"
+          elif [[ "$MERGE_BASE" == "$BRANCH_SHA" ]]; then
+            echo "status=behind" >> "$GITHUB_OUTPUT"
+            BEHIND_COUNT=$(git rev-list --count "origin/$BRANCH..origin/main")
+            echo "::notice::$BRANCH is behind main by $BEHIND_COUNT commits"
+          else
+            echo "status=diverged" >> "$GITHUB_OUTPUT"
+            MAIN_AHEAD=$(git rev-list --count "$MERGE_BASE..origin/main")
+            BRANCH_AHEAD=$(git rev-list --count "$MERGE_BASE..origin/$BRANCH")
+            echo "::warning::$BRANCH has diverged - main ahead by $MAIN_AHEAD, branch ahead by $BRANCH_AHEAD"
+          fi
+
+      - name: Skip - already synced
+        if: (steps.analyze.outputs.status == 'equal' || steps.analyze.outputs.status == 'ahead') && matrix.force != 'true'
+        run: |
+          echo "::notice::${{ matrix.branch }} is already up to date with main"
+
+      - name: Force sync - reset to main
+        if: (steps.analyze.outputs.status == 'equal' || steps.analyze.outputs.status == 'ahead') && matrix.force == 'true'
+        env:
+          BRANCH: ${{ matrix.branch }}
+        run: |
+          echo "::warning::Force sync requested for $BRANCH (discarding branch-specific commits)"
+          git checkout "$BRANCH"
+          git reset --hard origin/main
+          git push origin "$BRANCH" --force-with-lease
+          echo "::notice::Force synced $BRANCH to main"
+
+      - name: Skip - unrelated branches
+        if: steps.analyze.outputs.status == 'unrelated'
+        run: |
+          echo "::warning::${{ matrix.branch }} has no common ancestor with main, skipping"
+
+      - name: Fast-forward sync
+        if: steps.analyze.outputs.status == 'behind'
+        env:
+          BRANCH: ${{ matrix.branch }}
+        run: |
+          git checkout "$BRANCH"
+          git merge --ff-only origin/main
+          git push origin "$BRANCH"
+          echo "::notice::Fast-forwarded $BRANCH to main"
+
+      - name: Rebase sync
+        if: steps.analyze.outputs.status == 'diverged' && matrix.strategy == 'rebase'
+        env:
+          BRANCH: ${{ matrix.branch }}
+        run: |
+          git checkout "$BRANCH"
+
+          # Get commits unique to branch (not in main)
+          UNIQUE_COMMITS=$(git rev-list origin/main.."$BRANCH" --reverse)
+          UNIQUE_COUNT=$(echo "$UNIQUE_COMMITS" | grep -c . || echo 0)
+
+          echo "::notice::Rebasing $UNIQUE_COUNT unique commits onto main"
+
+          if git rebase origin/main; then
+            git push origin "$BRANCH" --force-with-lease
+            echo "::notice::Rebased $BRANCH onto main"
+          else
+            git rebase --abort
+            echo "::error::Rebase failed for $BRANCH - conflicts detected, manual intervention required"
+            exit 1
+          fi
+
+      - name: Skip - diverged (ff-only strategy)
+        if: steps.analyze.outputs.status == 'diverged' && matrix.strategy != 'rebase'
+        run: |
+          echo "::warning::${{ matrix.branch }} has diverged from main"
+          echo "::warning::Strategy is ff-only, skipping. Manual intervention may be required."
+
+      - name: Verify sync
+        if: |
+          steps.analyze.outputs.status == 'behind' ||
+          (steps.analyze.outputs.status == 'diverged' && matrix.strategy == 'rebase') ||
+          matrix.force == 'true'
+        env:
+          BRANCH: ${{ matrix.branch }}
+        run: |
+          git fetch origin "$BRANCH"
+          if git merge-base --is-ancestor origin/main "origin/$BRANCH"; then
+            echo "::notice::Verification passed: main is ancestor of $BRANCH"
+
+            # Show new state
+            AHEAD_COUNT=$(git rev-list --count "origin/main..origin/$BRANCH")
+            echo "::notice::$BRANCH is now ahead of main by $AHEAD_COUNT commits"
+          else
+            echo "::error::Verification failed: main is not ancestor of $BRANCH"
+            exit 1
+          fi
+
+  # Summary job for reporting and failure notifications
+  summary:
+    name: Summary
+    needs: [discover-branches, sync-branch]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for failures
+        id: check
+        run: |
+          if [[ "${{ needs.sync-branch.result }}" == "failure" ]]; then
+            echo "has_failures=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_failures=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create issue for sync failures
+        if: steps.check.outputs.has_failures == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # Check if an issue already exists (uses failure + automation labels)
+          EXISTING=$(gh issue list --label "bug,automation" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [[ -n "$EXISTING" ]]; then
+            # Add comment to existing issue
+            gh issue comment "$EXISTING" \
+              --body "Sync workflow failed again on $(date -u +%Y-%m-%dT%H:%M:%SZ).
+
+          **Workflow Run:** [View details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo "::notice::Added comment to existing issue #$EXISTING"
+          else
+            # Create new issue
+            gh issue create \
+              --title "Branch sync failed - manual intervention required" \
+              --label "bug,automation" \
+              --body "## Sync Workflow Failure
+
+          The branch sync workflow encountered failures that require manual intervention.
+
+          **Workflow Run:** [View details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          **Triggered by:** ${{ github.event_name }}
+          **Date:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          ### Possible Causes
+          - Rebase conflicts on integration branch
+          - Protected branch rules blocking push
+          - Network/GitHub API issues
+
+          ### Resolution Steps
+          1. Check the workflow logs for specific errors
+          2. If rebase conflict: manually rebase the branch onto main
+          3. If ruleset issue: verify GitHub Actions has bypass permissions
+          4. Once resolved, close this issue
+
+          /cc @aRustyDev"
+            echo "::notice::Created new sync-failure issue"
+          fi
+
+      - name: Generate summary
+        run: |
+          {
+            echo "## Sync Workflow Summary"
+            echo ""
+            echo "| Job | Status |"
+            echo "|-----|--------|"
+            echo "| Discover | ${{ needs.discover-branches.result }} |"
+            echo "| Sync | ${{ needs.sync-branch.result }} |"
+            echo ""
+            echo "**Branches discovered:** ${{ needs.discover-branches.outputs.count || 0 }}"
+            echo ""
+            if [[ "${{ needs.sync-branch.result }}" == "success" ]]; then
+              echo "All branches synced successfully"
+            elif [[ "${{ needs.sync-branch.result }}" == "failure" ]]; then
+              echo "Some branches failed to sync - see job logs for details"
+            elif [[ "${{ needs.sync-branch.result }}" == "skipped" ]]; then
+              echo "No branches required syncing"
+            else
+              echo "Sync status: ${{ needs.sync-branch.result }}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

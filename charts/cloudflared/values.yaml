@@ -165,6 +165,9 @@ tolerations:
 # -- For more information checkout: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity
 affinity: {}
 
+# -- Priority class name for pod scheduling. For more information checkout: https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/
+priorityClassName: ""
+
 # -- Prometheus metrics configuration. Cloudflared exposes metrics on port 2000 by default.
 metrics:
   # -- Enable metrics endpoint
