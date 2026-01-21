@@ -24,6 +24,11 @@ on:
     tags:
       - '*-v*'  # Matches: cloudflared-v0.1.0, test-workflow-v1.2.3, etc.
 
+  # Manual trigger via GitHub API with App token (more secure than workflow_dispatch)
+  # Usage: gh api repos/:owner/:repo/dispatches -f event_type=release-chart -f client_payload='{"tag":"cloudflared-v0.1.0"}'
+  repository_dispatch:
+    types: [release-chart]
+
 permissions:
   contents: write
   packages: write
@@ -32,7 +37,7 @@ permissions:
   attestations: write
 
 concurrency:
-  group: chart-release-${{ github.ref_name }}
+  group: chart-release-${{ github.event_name == 'repository_dispatch' && github.event.client_payload.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -50,7 +55,18 @@ jobs:
       - name: Parse Tag
         id: parse
         run: |
-          TAG="${GITHUB_REF_NAME}"
+          # Determine tag from trigger type
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            TAG="${{ github.event.client_payload.tag }}"
+            if [[ -z "$TAG" ]]; then
+              echo "::error::repository_dispatch requires client_payload.tag"
+              echo "::error::Usage: gh api repos/:owner/:repo/dispatches -f event_type=release-chart -f client_payload='{\"tag\":\"chart-v1.0.0\"}'"
+              exit 1
+            fi
+            echo "::notice::Manual release via repository_dispatch"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
 
           echo "::notice::Processing tag: $TAG"
 
@@ -75,6 +91,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.parse.outputs.tag }}
 
       - name: Validate Chart Exists
         id: validate
@@ -224,7 +242,7 @@ jobs:
 
       - name: Load secrets from 1Password
         id: op-secrets
-        uses: 1password/load-secrets-action@v2
+        uses: 1password/load-secrets-action@v3
         with:
           export-env: false
         env:
@@ -404,7 +422,7 @@ jobs:
     steps:
       - name: Load secrets from 1Password
         id: op-secrets
-        uses: 1password/load-secrets-action@v2
+        uses: 1password/load-secrets-action@v3
         with:
           export-env: false
         env:
@@ -501,7 +519,8 @@ jobs:
             echo "## Release Atomic Chart - Summary"
             echo ""
             echo "### Tag Information"
-            echo "- **Tag**: ${{ github.ref_name }}"
+            echo "- **Tag**: ${{ needs.validate-tag.outputs.tag }}"
+            echo "- **Trigger**: ${{ github.event_name }}"
             echo "- **Chart**: ${{ needs.validate-tag.outputs.chart }}"
             echo "- **Version**: ${{ needs.validate-tag.outputs.version }}"
             echo ""
