@@ -4,10 +4,13 @@ Helm charts repository with multiple distribution endpoints.
 
 ## Available Charts
 
-| Chart | Description | Version |
-|-------|-------------|---------|
-| [holmes](./charts/olm) | OLM (Operator Lifecycle Manager) for Kubernetes | 0.1.0 |
-| [mdbook-htmx](./charts/mdbook-htmx) | HTMX-enhanced documentation backend for MDBook | 0.1.0 |
+| Chart | Description |
+|-------|-------------|
+| [cloudflared](./charts/cloudflared) | Cloudflare Tunnel client for secure ingress |
+| [mdbook-htmx](./charts/mdbook-htmx) | HTMX-enhanced documentation backend for MDBook |
+| [olm](./charts/olm) | OLM (Operator Lifecycle Manager) for Kubernetes |
+
+> Version information is available in each chart's `Chart.yaml` or via `helm search`.
 
 ## Usage
 
@@ -34,25 +37,25 @@ No `helm repo add` required - reference charts directly:
 
 ```bash
 # Install from GitHub Container Registry
-helm install my-olm oci://ghcr.io/arustydev/charts/holmes --version 0.1.0
-helm install my-docs oci://ghcr.io/arustydev/charts/mdbook-htmx --version 0.1.0
+helm install my-tunnel oci://ghcr.io/arustydev/charts/cloudflared
+helm install my-docs oci://ghcr.io/arustydev/charts/mdbook-htmx
 ```
 
 ### Install a Chart
 
 ```bash
 # From Helm repository
-helm install my-olm arustydev/holmes
+helm install my-tunnel arustydev/cloudflared
 helm install my-docs arustydev/mdbook-htmx
 
-# From OCI registry
-helm install my-olm oci://ghcr.io/arustydev/charts/holmes
+# From OCI registry (with specific version)
+helm install my-tunnel oci://ghcr.io/arustydev/charts/cloudflared --version 0.4.3
 ```
 
 ### Uninstall a Chart
 
 ```bash
-helm delete my-olm
+helm delete my-tunnel
 helm delete my-docs
 ```
 
