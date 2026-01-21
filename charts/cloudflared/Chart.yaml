@@ -1,8 +1,8 @@
 annotations:
   artifacthub.io/alternativeName: cloudflare
   artifacthub.io/changes: |-
-    - kind: added
-      description: Add additional keywords for discoverability (ingress, private-network)
+    - kind: fixed
+      description: Apply podLabels from values to pod template metadata
   artifacthub.io/containsSecurityUpdates: "false"
   artifacthub.io/images: |
     - name: cloudflared
@@ -64,4 +64,4 @@ sources:
   - https://github.com/aRustyDev/helm-charts
   - https://github.com/cloudflare/cloudflared
 type: application
-version: 0.4.2
+version: 0.4.3

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.3] - 2026-01-21
+
+### Changed
+- chore(cloudflared): sync from integration
+- chore(cloudflared): sync from integration
+
 ## [0.4.2] - 2026-01-17
 
 ### Changed
