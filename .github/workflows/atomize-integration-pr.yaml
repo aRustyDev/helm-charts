@@ -1,0 +1,483 @@
+# Atomize Integration PR
+#
+# Phase 2 of atomization: After a PR merges to integration, extract
+# content into atomic branches and reset integration to main.
+#
+# This workflow:
+# 1. Re-analyzes merged PR (validated in Phase 1)
+# 2. Creates atomic branches from main
+# 3. Cherry-picks relevant changes to each branch
+# 4. Creates PRs to main with related links
+# 5. Resets integration to main
+#
+# Failure handling: If any step fails, cleanup pushed branches and
+# do NOT reset integration.
+#
+# Authentication: Uses GitHub App token for elevated permissions
+# Required secrets: OP_SERVICE_ACCOUNT_TOKEN (1Password)
+
+name: Atomize Integration PR
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [integration]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+# Prevent concurrent atomization runs
+concurrency:
+  group: atomize-integration
+  cancel-in-progress: false
+
+jobs:
+  generate-token:
+    name: Generate App Token
+    runs-on: ubuntu-latest
+    outputs:
+      token: ${{ steps.app-token.outputs.token }}
+    steps:
+      - name: Load secrets from 1Password
+        id: op-secrets
+        uses: 1password/load-secrets-action@v3
+        with:
+          export-env: false
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          X_REPO_AUTH_APP_ID: op://gh-shared/xauth/app/id
+          X_REPO_AUTH_PRIVATE_KEY: op://gh-shared/xauth/app/private-key.pem
+
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
+          private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
+
+  should-run:
+    name: Check Trigger
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - name: Check if PR was merged
+        id: check
+        run: |
+          if [[ "${{ github.event.pull_request.merged }}" == "true" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::PR was merged, proceeding with atomization"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::PR was closed without merge, skipping"
+          fi
+
+  analyze:
+    name: Analyze Merged PR
+    needs: [generate-token, should-run]
+    if: needs.should-run.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      categories: ${{ steps.categorize.outputs.categories }}
+      dlq_files: ${{ steps.categorize.outputs.dlq_files }}
+      has_changes: ${{ steps.categorize.outputs.has_changes }}
+      source_pr: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: integration
+          token: ${{ needs.generate-token.outputs.token }}
+
+      - name: Install dependencies
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Get changed files from merged PR
+        id: changed
+        env:
+          GH_TOKEN: ${{ needs.generate-token.outputs.token }}
+        run: |
+          # Get files that were in the merged PR
+          FILES=$(gh pr diff ${{ github.event.pull_request.number }} --name-only)
+          echo "$FILES" > /tmp/changed-files.txt
+          echo "::notice::Found $(echo "$FILES" | wc -l | tr -d ' ') changed files"
+
+      - name: Categorize files
+        id: categorize
+        run: |
+          source .github/actions/atomize/lib/atomize.sh
+          source .github/actions/atomize/lib/relationships.sh
+
+          FILES=$(cat /tmp/changed-files.txt)
+          CATEGORIES="{}"
+          DLQ_FILES="[]"
+
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            branch=$(match_branch_pattern "$file")
+
+            if [[ -n "$branch" ]]; then
+              CATEGORIES=$(echo "$CATEGORIES" | jq --arg b "$branch" --arg f "$file" \
+                '.[$b] = ((.[$b] // []) + [$f])')
+            else
+              DLQ_FILES=$(echo "$DLQ_FILES" | jq --arg f "$file" '. + [$f]')
+            fi
+          done <<< "$FILES"
+
+          echo "categories=$(echo "$CATEGORIES" | jq -c)" >> "$GITHUB_OUTPUT"
+          echo "dlq_files=$(echo "$DLQ_FILES" | jq -c)" >> "$GITHUB_OUTPUT"
+
+          if [[ $(echo "$CATEGORIES" | jq 'keys | length') -gt 0 ]]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  extract:
+    name: Extract to Atomic Branches
+    needs: [generate-token, analyze]
+    if: needs.analyze.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      created_branches: ${{ steps.extract.outputs.branches }}
+      created_prs: ${{ steps.create-prs.outputs.prs }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ needs.generate-token.outputs.token }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Extract to atomic branches
+        id: extract
+        env:
+          CATEGORIES: ${{ needs.analyze.outputs.categories }}
+          SOURCE_PR: ${{ needs.analyze.outputs.source_pr }}
+          MERGE_COMMIT: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          CREATED_BRANCHES=()
+
+          # Process each category
+          for branch in $(echo "$CATEGORIES" | jq -r 'keys[]'); do
+            echo "::group::Creating branch: $branch"
+
+            # Get files for this branch
+            FILES=$(echo "$CATEGORIES" | jq -r --arg b "$branch" '.[$b][]')
+
+            # Create branch from main
+            git checkout -b "$branch" origin/main 2>/dev/null || {
+              # Branch exists, update it
+              git checkout "$branch"
+              git reset --hard origin/main
+            }
+
+            # Checkout files from the merge commit
+            for file in $FILES; do
+              echo "Extracting: $file"
+              git checkout "$MERGE_COMMIT" -- "$file" 2>/dev/null || {
+                echo "::warning::Could not extract $file"
+                continue
+              }
+            done
+
+            # Commit changes
+            git add -A
+            if ! git diff --cached --quiet; then
+              # Get original commit message
+              ORIGINAL_MSG=$(git log -1 --format=%B "$MERGE_COMMIT" | head -1)
+
+              git commit -m "$(cat <<EOF
+          $ORIGINAL_MSG
+
+          Related-To: #$SOURCE_PR
+          Atomized-From: $MERGE_COMMIT
+          EOF
+          )"
+
+              # Push branch
+              git push origin "$branch" --force-with-lease
+              CREATED_BRANCHES+=("$branch")
+              echo "::notice::Created branch: $branch"
+            else
+              echo "::notice::No changes for branch: $branch"
+            fi
+
+            git checkout main
+            echo "::endgroup::"
+          done
+
+          # Output created branches
+          echo "branches=$(printf '%s\n' "${CREATED_BRANCHES[@]}" | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+
+      - name: Create PRs (Pass 1)
+        id: create-prs
+        env:
+          GH_TOKEN: ${{ needs.generate-token.outputs.token }}
+          BRANCHES: ${{ steps.extract.outputs.branches }}
+          SOURCE_PR: ${{ needs.analyze.outputs.source_pr }}
+        run: |
+          PR_MAP="{}"
+
+          for branch in $(echo "$BRANCHES" | jq -r '.[]'); do
+            echo "Creating PR for: $branch"
+
+            # Build PR body
+            PR_BODY="## Atomized from Integration PR #$SOURCE_PR
+
+          This PR contains the \`$branch\` changes from #$SOURCE_PR.
+
+          ---
+          *Automatically created by the atomization workflow*"
+
+            # Create PR
+            PR_URL=$(gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "$(git log origin/$branch -1 --format=%s)" \
+              --body "$PR_BODY" \
+              2>&1) || {
+                echo "::warning::Failed to create PR for $branch: $PR_URL"
+                continue
+              }
+
+            PR_NUM=$(echo "$PR_URL" | grep -oE '[0-9]+$')
+            PR_MAP=$(echo "$PR_MAP" | jq --arg b "$branch" --arg n "$PR_NUM" '.[$b] = $n')
+            echo "::notice::Created PR #$PR_NUM for $branch"
+          done
+
+          echo "prs=$(echo "$PR_MAP" | jq -c)" >> "$GITHUB_OUTPUT"
+
+      - name: Update PRs with related links (Pass 2)
+        env:
+          GH_TOKEN: ${{ needs.generate-token.outputs.token }}
+          PR_MAP: ${{ steps.create-prs.outputs.prs }}
+          SOURCE_PR: ${{ needs.analyze.outputs.source_pr }}
+        shell: bash
+        run: |
+          # Get all PR numbers
+          ALL_PRS=$(echo "$PR_MAP" | jq -r 'to_entries | map("#\(.value)") | join(", ")')
+
+          for branch in $(echo "$PR_MAP" | jq -r 'keys[]'); do
+            PR_NUM=$(echo "$PR_MAP" | jq -r --arg b "$branch" '.[$b]')
+
+            # Build related PRs list (excluding self)
+            RELATED=$(echo "$PR_MAP" | jq -r --arg b "$branch" \
+              'to_entries | map(select(.key != $b)) | map("#\(.value)") | join(", ")')
+
+            if [[ -n "$RELATED" ]]; then
+              # Update PR body with related links
+              CURRENT_BODY=$(gh pr view "$PR_NUM" --json body --jq '.body')
+              NEW_BODY="${CURRENT_BODY}
+
+          ## Related PRs
+          ${RELATED}
+
+          All PRs from integration ${SOURCE_PR}: ${ALL_PRS}"
+
+              gh pr edit "$PR_NUM" --body "$NEW_BODY"
+              echo "::notice::Updated PR #$PR_NUM with related links"
+            fi
+          done
+
+  handle-dlq:
+    name: Handle DLQ Files
+    needs: [generate-token, analyze]
+    if: needs.analyze.outputs.dlq_files != '[]' && needs.analyze.outputs.dlq_files != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ needs.generate-token.outputs.token }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create DLQ branch
+        env:
+          DLQ_FILES: ${{ needs.analyze.outputs.dlq_files }}
+          SOURCE_PR: ${{ needs.analyze.outputs.source_pr }}
+          MERGE_COMMIT: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          DLQ_BRANCH="dlq/$SOURCE_PR"
+
+          git checkout -b "$DLQ_BRANCH" origin/main
+
+          for file in $(echo "$DLQ_FILES" | jq -r '.[]'); do
+            echo "Adding to DLQ: $file"
+            git checkout "$MERGE_COMMIT" -- "$file" 2>/dev/null || continue
+          done
+
+          git add -A
+          if ! git diff --cached --quiet; then
+            COMMIT_MSG="ci(dlq): unmatched files from PR #${SOURCE_PR}
+
+          These files did not match any branch pattern and require manual categorization.
+
+          Related-To: #${SOURCE_PR}"
+            git commit -m "$COMMIT_MSG"
+            git push origin "$DLQ_BRANCH"
+            echo "::warning::Created DLQ branch: $DLQ_BRANCH"
+          fi
+
+      - name: Create DLQ issue
+        env:
+          GH_TOKEN: ${{ needs.generate-token.outputs.token }}
+          DLQ_FILES: ${{ needs.analyze.outputs.dlq_files }}
+          SOURCE_PR: ${{ needs.analyze.outputs.source_pr }}
+        shell: bash
+        run: |
+          FILES_LIST=$(echo "$DLQ_FILES" | jq -r '.[] | "- `\(.)`"')
+
+          ISSUE_BODY="## Unmatched Files
+
+          The following files from PR #${SOURCE_PR} did not match any branch pattern:
+
+          ${FILES_LIST}
+
+          ### Resolution Steps
+
+          1. Update \`.github/actions/configs/atomic-branches.json\` to add patterns for these files
+          2. Or add \`related:\` metadata to link them to existing patterns
+          3. Once resolved, manually cherry-pick these files to the appropriate branches
+
+          ### DLQ Branch
+
+          These files are preserved in branch: \`dlq/${SOURCE_PR}\`
+
+          ---
+          *Automatically created by the atomization workflow*"
+
+          gh issue create \
+            --title "ci(dlq): unmatched files from PR #${SOURCE_PR}" \
+            --label "bug,automation" \
+            --body "$ISSUE_BODY"
+
+  reset-integration:
+    name: Reset Integration
+    needs: [generate-token, analyze, extract]
+    if: always() && needs.analyze.outputs.has_changes == 'true' && needs.extract.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ needs.generate-token.outputs.token }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Reset integration to main
+        env:
+          GH_TOKEN: ${{ needs.generate-token.outputs.token }}
+        run: |
+          # Use the app token for authenticated push
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git fetch origin main integration
+          git checkout integration
+          git reset --hard origin/main
+          git push origin integration --force-with-lease
+          echo "::notice::Reset integration branch to main"
+
+  cleanup-on-failure:
+    name: Cleanup on Failure
+    needs: [generate-token, analyze, extract]
+    if: failure() && needs.extract.result == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete created branches
+        env:
+          GH_TOKEN: ${{ needs.generate-token.outputs.token }}
+          BRANCHES: ${{ needs.extract.outputs.created_branches }}
+        run: |
+          if [[ -z "$BRANCHES" ]] || [[ "$BRANCHES" == "[]" ]]; then
+            echo "::notice::No branches to clean up"
+            exit 0
+          fi
+
+          for branch in $(echo "$BRANCHES" | jq -r '.[]'); do
+            echo "Deleting branch: $branch"
+            gh api "repos/${{ github.repository }}/git/refs/heads/$branch" -X DELETE || true
+          done
+
+          echo "::warning::Cleaned up branches due to extraction failure"
+
+      - name: Create failure issue
+        env:
+          GH_TOKEN: ${{ needs.generate-token.outputs.token }}
+          SOURCE_PR: ${{ needs.analyze.outputs.source_pr }}
+          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          ISSUE_BODY="## Atomization Failure
+
+          The atomization workflow failed for PR #${SOURCE_PR}.
+
+          ### Details
+
+          - **Workflow Run**: [View details](${WORKFLOW_URL})
+          - **Source PR**: #${SOURCE_PR}
+
+          ### Manual Resolution Required
+
+          1. Check the workflow logs for specific errors
+          2. The integration branch has NOT been reset
+          3. Manually extract changes or fix the issue and re-run
+
+          ---
+          *Automatically created by the atomization workflow*"
+
+          gh issue create \
+            --title "Atomization failed for PR #${SOURCE_PR}" \
+            --label "bug,automation" \
+            --body "$ISSUE_BODY"
+
+  summary:
+    name: Summary
+    needs: [generate-token, analyze, extract, handle-dlq, reset-integration]
+    if: always() && needs.analyze.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate summary
+        env:
+          EXTRACT_RESULT: ${{ needs.extract.result }}
+          RESET_RESULT: ${{ needs.reset-integration.result }}
+          DLQ_RESULT: ${{ needs.handle-dlq.result }}
+          CREATED_PRS: ${{ needs.extract.outputs.created_prs }}
+          SOURCE_PR: ${{ needs.analyze.outputs.source_pr }}
+        run: |
+          {
+            echo "## Atomization Summary"
+            echo ""
+            echo "**Source PR**: #$SOURCE_PR"
+            echo ""
+            echo "| Job | Status |"
+            echo "|-----|--------|"
+            echo "| Extract | $EXTRACT_RESULT |"
+            echo "| Reset Integration | $RESET_RESULT |"
+            echo "| Handle DLQ | ${DLQ_RESULT:-skipped} |"
+            echo ""
+
+            if [[ "$EXTRACT_RESULT" == "success" ]]; then
+              echo "### Created PRs"
+              echo ""
+              echo "$CREATED_PRS" | jq -r 'to_entries[] | "- **\(.key)**: #\(.value)"'
+            fi
+
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,23 @@
+# Default values for test-workflow
+# This is a test chart for E2E workflow validation
+
+replicaCount: 1
+
+image:
+  repository: nginx
+  pullPolicy: IfNotPresent
+  tag: "stable"
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 80
+
+resources: {}
+
+# E2E test configuration
+e2e:
+  enabled: true
+  message: "Hello from E2E test"

@@ -12,7 +12,9 @@
 #
 # Trust Requirements (ALL must pass):
 # 1. PR targets an allowed base branch (configured in ALLOWED_BASE_BRANCHES)
-# 2. PR author is listed in CODEOWNERS
+# 2. Trust check (one of):
+#    a. PR author is dependabot[bot] (trusted GitHub automation)
+#    b. PR author is listed in CODEOWNERS (trusted contributor)
 # 3. All commits in PR are signed/verified
 #
 # See ADR-009 for details.
@@ -119,31 +121,57 @@ jobs:
 
           echo "::endgroup::"
 
+      - name: Detect PR Type
+        if: steps.pr.outputs.found == 'true'
+        id: detect
+        env:
+          PR_AUTHOR: ${{ steps.pr.outputs.author }}
+        run: |
+          echo "::group::Detecting PR type"
+
+          if [[ "$PR_AUTHOR" == "dependabot[bot]" ]]; then
+            echo "pr_type=dependabot" >> "$GITHUB_OUTPUT"
+            echo "::notice::Dependabot PR detected - using automation trust path"
+          else
+            echo "pr_type=contributor" >> "$GITHUB_OUTPUT"
+            echo "::notice::Contributor PR detected - using CODEOWNERS trust path"
+          fi
+
+          echo "::endgroup::"
+
       - name: Check Contributor Trust
         if: steps.pr.outputs.found == 'true'
         id: trust
         env:
           GH_TOKEN: ${{ github.token }}
           PR_AUTHOR: ${{ steps.pr.outputs.author }}
+          PR_TYPE: ${{ steps.detect.outputs.pr_type }}
         run: |
           echo "::group::Checking contributor trust"
 
           TRUSTED=false
 
-          # Check CODEOWNERS file locations
-          for CODEOWNERS_FILE in "CODEOWNERS" ".github/CODEOWNERS" "docs/CODEOWNERS"; do
-            if [[ -f "$CODEOWNERS_FILE" ]]; then
-              echo "Checking $CODEOWNERS_FILE for @$PR_AUTHOR"
-              if grep -q "@$PR_AUTHOR" "$CODEOWNERS_FILE" 2>/dev/null; then
-                echo "::notice::Author @$PR_AUTHOR is listed in $CODEOWNERS_FILE"
-                TRUSTED=true
-                break
+          if [[ "$PR_TYPE" == "dependabot" ]]; then
+            # Dependabot is trusted by virtue of being the GitHub app
+            # The author check in detect step already verified it's dependabot[bot]
+            echo "::notice::Dependabot is a trusted GitHub automation"
+            TRUSTED=true
+          else
+            # Human contributor - check CODEOWNERS
+            for CODEOWNERS_FILE in "CODEOWNERS" ".github/CODEOWNERS" "docs/CODEOWNERS"; do
+              if [[ -f "$CODEOWNERS_FILE" ]]; then
+                echo "Checking $CODEOWNERS_FILE for @$PR_AUTHOR"
+                if grep -q "@$PR_AUTHOR" "$CODEOWNERS_FILE" 2>/dev/null; then
+                  echo "::notice::Author @$PR_AUTHOR is listed in $CODEOWNERS_FILE"
+                  TRUSTED=true
+                  break
+                fi
               fi
-            fi
-          done
+            done
 
-          if [[ "$TRUSTED" != "true" ]]; then
-            echo "::notice::Author @$PR_AUTHOR is not in CODEOWNERS - manual review required"
+            if [[ "$TRUSTED" != "true" ]]; then
+              echo "::notice::Author @$PR_AUTHOR is not in CODEOWNERS - manual review required"
+            fi
           fi
 
           echo "trusted=$TRUSTED" >> "$GITHUB_OUTPUT"
@@ -203,15 +231,20 @@ jobs:
         if: steps.pr.outputs.found == 'true'
         run: |
           PR_NUMBER="${{ steps.pr.outputs.number }}"
+          PR_TYPE="${{ steps.detect.outputs.pr_type }}"
           TRUSTED="${{ steps.trust.outputs.trusted }}"
           VERIFIED="${{ steps.verify.outputs.all_verified }}"
 
           echo "## Auto-Merge Status for PR #$PR_NUMBER" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**PR Type**: $PR_TYPE" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Check | Status |" >> "$GITHUB_STEP_SUMMARY"
           echo "|-------|--------|" >> "$GITHUB_STEP_SUMMARY"
 
-          if [[ "$TRUSTED" == "true" ]]; then
+          if [[ "$PR_TYPE" == "dependabot" ]]; then
+            echo "| Trusted automation (dependabot) | ✅ Pass |" >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$TRUSTED" == "true" ]]; then
             echo "| Contributor in CODEOWNERS | ✅ Pass |" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "| Contributor in CODEOWNERS | ❌ Fail |" >> "$GITHUB_STEP_SUMMARY"
@@ -227,7 +260,7 @@ jobs:
 
           if [[ "$TRUSTED" == "true" && "$VERIFIED" == "true" ]]; then
             echo "**Result**: Auto-merge enabled ✅" >> "$GITHUB_STEP_SUMMARY"
-            echo "::notice::Auto-merge ENABLED for PR #$PR_NUMBER"
+            echo "::notice::Auto-merge ENABLED for PR #$PR_NUMBER ($PR_TYPE)"
           else
             echo "**Result**: Manual review required ⚠️" >> "$GITHUB_STEP_SUMMARY"
             echo "::notice::Auto-merge SKIPPED for PR #$PR_NUMBER - manual review required"
