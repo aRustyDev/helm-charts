@@ -156,11 +156,13 @@ jobs:
             echo "pr_number=$SOURCE_PR" >> "$GITHUB_OUTPUT"
 
             # Check if source PR is from dependabot
+            # Note: API returns "app/dependabot" for dependabot PRs, not "dependabot[bot]"
             PR_AUTHOR=$(gh pr view "$SOURCE_PR" --json author --jq '.author.login')
-            if [[ "$PR_AUTHOR" == "dependabot[bot]" ]]; then
-              echo "::notice::Source PR is from dependabot"
+            if [[ "$PR_AUTHOR" == "dependabot[bot]" || "$PR_AUTHOR" == "app/dependabot" ]]; then
+              echo "::notice::Source PR is from dependabot (author: $PR_AUTHOR)"
               echo "is_dependabot=true" >> "$GITHUB_OUTPUT"
             else
+              echo "::notice::Source PR author: $PR_AUTHOR (not dependabot)"
               echo "is_dependabot=false" >> "$GITHUB_OUTPUT"
             fi
 
