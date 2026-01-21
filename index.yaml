@@ -4,6 +4,148 @@ entries:
   - annotations:
       artifacthub.io/alternativeName: cloudflare
       artifacthub.io/changes: |-
+        - kind: fixed
+          description: Apply podLabels from values to pod template metadata
+      artifacthub.io/containsSecurityUpdates: "false"
+      artifacthub.io/images: |
+        - name: cloudflared
+          image: cloudflare/cloudflared:2025.11.1
+          platforms:
+            - linux/amd64
+            - linux/arm64
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Chart Source
+          url: https://github.com/aRustyDev/helm-charts
+        - name: Chart Documentation
+          url: https://charts.arusty.dev/cloudflared/
+        - name: Upstream Project
+          url: https://github.com/cloudflare/cloudflared
+        - name: Official Documentation
+          url: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
+      artifacthub.io/maintainers: |
+        - name: aRustyDev
+          email: adam@arustydev.io
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/screenshots: |
+        - title: Cloudflared Tunnel Overview
+          url: https://raw.githubusercontent.com/cloudflare/cloudflare-docs/refs/heads/production/src/assets/images/cloudflare-one/connections/connect-apps/handshake.jpg
+      artifacthub.io/signKey: |
+        fingerprint: 939B1A0ED8AAA8E722ACCDB3B6A012EE8A76426A
+        url: https://keybase.io/communitycharts/pgp_keys.asc
+    apiVersion: v2
+    appVersion: 2025.11.1
+    created: "2026-01-21T00:17:46.097272616Z"
+    description: A Helm chart for Cloudflare Tunnel (cloudflared)
+    digest: fb208c3849a132e0ab87e11381c6cb953f8a59652eeac3d34234bf6359244ed2
+    home: https://github.com/cloudflare/cloudflared
+    icon: https://raw.githubusercontent.com/cloudflare/color/refs/heads/master/static/thinking/logo.png
+    keywords:
+    - cloudflared
+    - cloudflare
+    - cloudflare-tunnel
+    - kubernetes
+    - reverse-proxy
+    - argo-tunnel
+    - argo
+    - tunnel
+    - zero-trust-network-access
+    - ztna
+    - warp
+    - connect-apps
+    - access
+    - network
+    - connectivity
+    - ingress
+    - private-network
+    kubeVersion: '>=1.21.0-0'
+    maintainers:
+    - email: adam@arustydev.io
+      name: aRustyDev
+      url: https://github.com/aRustyDev
+    name: cloudflared
+    sources:
+    - https://github.com/aRustyDev/helm-charts
+    - https://github.com/cloudflare/cloudflared
+    type: application
+    urls:
+    - https://github.com/aRustyDev/helm-charts/releases/download/cloudflared-v0.4.3/cloudflared-0.4.3.tgz
+    version: 0.4.3
+  - annotations:
+      artifacthub.io/alternativeName: cloudflare
+      artifacthub.io/changes: |-
+        - kind: fixed
+          description: Apply podLabels from values to pod template metadata
+      artifacthub.io/containsSecurityUpdates: "false"
+      artifacthub.io/images: |
+        - name: cloudflared
+          image: cloudflare/cloudflared:2025.11.1
+          platforms:
+            - linux/amd64
+            - linux/arm64
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Chart Source
+          url: https://github.com/aRustyDev/helm-charts
+        - name: Chart Documentation
+          url: https://charts.arusty.dev/cloudflared/
+        - name: Upstream Project
+          url: https://github.com/cloudflare/cloudflared
+        - name: Official Documentation
+          url: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
+      artifacthub.io/maintainers: |
+        - name: aRustyDev
+          email: adam@arustydev.io
+      artifacthub.io/operator: "false"
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/screenshots: |
+        - title: Cloudflared Tunnel Overview
+          url: https://raw.githubusercontent.com/cloudflare/cloudflare-docs/refs/heads/production/src/assets/images/cloudflare-one/connections/connect-apps/handshake.jpg
+      artifacthub.io/signKey: |
+        fingerprint: 939B1A0ED8AAA8E722ACCDB3B6A012EE8A76426A
+        url: https://keybase.io/communitycharts/pgp_keys.asc
+    apiVersion: v2
+    appVersion: 2025.11.1
+    created: "2026-01-21T00:17:46.098573103Z"
+    description: A Helm chart for Cloudflare Tunnel (cloudflared)
+    digest: fb208c3849a132e0ab87e11381c6cb953f8a59652eeac3d34234bf6359244ed2
+    home: https://github.com/cloudflare/cloudflared
+    icon: https://raw.githubusercontent.com/cloudflare/color/refs/heads/master/static/thinking/logo.png
+    keywords:
+    - cloudflared
+    - cloudflare
+    - cloudflare-tunnel
+    - kubernetes
+    - reverse-proxy
+    - argo-tunnel
+    - argo
+    - tunnel
+    - zero-trust-network-access
+    - ztna
+    - warp
+    - connect-apps
+    - access
+    - network
+    - connectivity
+    - ingress
+    - private-network
+    kubeVersion: '>=1.21.0-0'
+    maintainers:
+    - email: adam@arustydev.io
+      name: aRustyDev
+      url: https://github.com/aRustyDev
+    name: cloudflared
+    sources:
+    - https://github.com/aRustyDev/helm-charts
+    - https://github.com/cloudflare/cloudflared
+    type: application
+    urls:
+    - https://github.com/aRustyDev/helm-charts/releases/download/cloudflared-v0.4.3/packages/cloudflared-0.4.3.tgz
+    version: 0.4.3
+  - annotations:
+      artifacthub.io/alternativeName: cloudflare
+      artifacthub.io/changes: |-
         - kind: added
           description: Add additional keywords for discoverability (ingress, private-network)
       artifacthub.io/containsSecurityUpdates: "false"
@@ -36,7 +178,7 @@ entries:
         url: https://keybase.io/communitycharts/pgp_keys.asc
     apiVersion: v2
     appVersion: 2025.11.1
-    created: "2026-01-20T23:32:59.948499817Z"
+    created: "2026-01-21T00:17:46.09599387Z"
     description: A Helm chart for Cloudflare Tunnel (cloudflared)
     digest: 39eaebbfb78866fba04b95ec62aa7b3d40214a1508908c14765c9925a3999c4d
     home: https://github.com/cloudflare/cloudflared
@@ -70,7 +212,7 @@ entries:
     - https://github.com/cloudflare/cloudflared
     type: application
     urls:
-    - https://github.com/aRustyDev/helm-charts/releases/download/test-workflow-v0.1.2/cloudflared-0.4.2.tgz
+    - https://github.com/aRustyDev/helm-charts/releases/download/cloudflared-v0.4.3/cloudflared-0.4.2.tgz
     version: 0.4.2
   - annotations:
       artifacthub.io/alternativeName: cloudflare
@@ -309,7 +451,7 @@ entries:
   test-workflow:
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-01-20T23:32:59.94874869Z"
+    created: "2026-01-21T00:17:46.097500701Z"
     description: Test chart for E2E workflow validation
     digest: ce441570dc0a987a9bd5ee05f34d0836efe41f5328f416fd136fac5efdf44aa1
     home: https://github.com/aRustyDev/helm-charts
@@ -325,26 +467,6 @@ entries:
     - https://github.com/aRustyDev/helm-charts
     type: application
     urls:
-    - https://github.com/aRustyDev/helm-charts/releases/download/test-workflow-v0.1.2/test-workflow-0.1.2.tgz
+    - https://github.com/aRustyDev/helm-charts/releases/download/cloudflared-v0.4.3/test-workflow-0.1.2.tgz
     version: 0.1.2
-  - apiVersion: v2
-    appVersion: 1.0.0
-    created: "2026-01-20T23:32:59.948967767Z"
-    description: Test chart for E2E workflow validation
-    digest: ce441570dc0a987a9bd5ee05f34d0836efe41f5328f416fd136fac5efdf44aa1
-    home: https://github.com/aRustyDev/helm-charts
-    keywords:
-    - test
-    - e2e
-    - workflow
-    maintainers:
-    - name: aRustyDev
-      url: https://github.com/aRustyDev
-    name: test-workflow
-    sources:
-    - https://github.com/aRustyDev/helm-charts
-    type: application
-    urls:
-    - https://github.com/aRustyDev/helm-charts/releases/download/test-workflow-v0.1.2/packages/test-workflow-0.1.2.tgz
-    version: 0.1.2
-generated: "2026-01-20T23:32:59.947195703Z"
+generated: "2026-01-21T00:17:46.094725713Z"
