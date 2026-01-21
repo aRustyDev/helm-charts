@@ -13,7 +13,7 @@
 # Trust Requirements (ALL must pass):
 # 1. PR targets an allowed base branch (configured in ALLOWED_BASE_BRANCHES)
 # 2. Trust check (one of):
-#    a. PR author is dependabot[bot] (trusted GitHub automation)
+#    a. PR author is dependabot (trusted GitHub automation)
 #    b. PR author is listed in CODEOWNERS (trusted contributor)
 # 3. All commits in PR are signed/verified
 #
@@ -129,9 +129,10 @@ jobs:
         run: |
           echo "::group::Detecting PR type"
 
-          if [[ "$PR_AUTHOR" == "dependabot[bot]" ]]; then
+          # Note: API returns "app/dependabot" for dependabot PRs, not "dependabot[bot]"
+          if [[ "$PR_AUTHOR" == "dependabot[bot]" || "$PR_AUTHOR" == "app/dependabot" ]]; then
             echo "pr_type=dependabot" >> "$GITHUB_OUTPUT"
-            echo "::notice::Dependabot PR detected - using automation trust path"
+            echo "::notice::Dependabot PR detected (author: $PR_AUTHOR) - using automation trust path"
           else
             echo "pr_type=contributor" >> "$GITHUB_OUTPUT"
             echo "::notice::Contributor PR detected - using CODEOWNERS trust path"
@@ -153,7 +154,7 @@ jobs:
 
           if [[ "$PR_TYPE" == "dependabot" ]]; then
             # Dependabot is trusted by virtue of being the GitHub app
-            # The author check in detect step already verified it's dependabot[bot]
+            # The author check in detect step already verified it's dependabot
             echo "::notice::Dependabot is a trusted GitHub automation"
             TRUSTED=true
           else
