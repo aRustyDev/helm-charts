@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schemas.arusty.dev/gha/configs/atomic-branches.schema.json",
+  "branches": [
+    {
+      "name": "$chart",
+      "prefix": "chart/",
+      "pattern": "charts/(?P<chart>[^/]+)/**"
+    },
+    {
+      "name": "$adr",
+      "prefix": "docs/adr-",
+      "pattern": "docs/src/adr/(?P<adr>[0-9]+)-.*\\.md"
+    },
+    {
+      "name": "$topic",
+      "prefix": "docs/",
+      "pattern": "docs/src/(?P<topic>[^/]+)/**"
+    },
+    {
+      "name": "$workflow",
+      "prefix": "ci/",
+      "pattern": "\\.github/workflows/(?P<workflow>[^.]+)\\.ya?ml"
+    },
+    {
+      "name": "$script",
+      "prefix": "ci/",
+      "pattern": "\\.github/scripts/(?P<script>[^.]+)\\.(sh|bash)"
+    },
+    {
+      "name": "config",
+      "prefix": "repo/",
+      "pattern": "^(CONTRIBUTING|README|LICENSE|CODE_OF_CONDUCT).*"
+    },
+    {
+      "name": "github-config",
+      "prefix": "repo/",
+      "pattern": "^\\.github/(CODEOWNERS|FUNDING\\.yml|dependabot\\.ya?ml)"
+    }
+  ],
+  "charts": [
+    {
+      "name": "cloudflared",
+      "related": [
+        "docs/src/cloudflared/*",
+        "docs/src/tunnels/cloudflare.md"
+      ],
+      "priority": 1
+    },
+    {
+      "name": "external-secrets",
+      "related": [
+        "docs/src/external-secrets/*"
+      ],
+      "priority": 2
+    }
+  ]
+}
