@@ -10,7 +10,8 @@ updates:
       prefix: "ci"
     labels:
       - "dependencies"
-      - "github-actions"
+      - "cicd"
+      - "automation"
     open-pull-requests-limit: 5
     groups:
       # Group all github-actions updates into a single PR
