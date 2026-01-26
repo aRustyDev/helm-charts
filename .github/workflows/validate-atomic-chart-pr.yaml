@@ -1,20 +1,16 @@
-# Validate Atomic Chart PR
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+#
+# Validate Atomic Chart PR (W5)
 #
 # Validates chart PRs from charts/<chart> branches and automatically
 # bumps versions based on conventional commits.
 #
-# This workflow:
-#   1. Validates PR source branch (must be charts/<chart> or integration/<chart>)
-#   2. Detects changed charts
-#   3. Runs lint tests (ArtifactHub + ct lint)
-#   4. Runs K8s matrix install tests
-#   5. Bumps version based on conventional commits (feat=minor, fix=patch)
-#   6. Generates/updates CHANGELOG.md using git-cliff
-#   7. Commits changes back to PR branch
-#   8. Updates PR description with attestation map
-#   9. On merge: Cleans up source branch
+# Calls reusable workflow from aRustyDev/gh for generic validation,
+# plus local Helm-specific jobs (K8s matrix testing, ArtifactHub lint).
 #
 # Trigger: Pull requests to main from charts/* or integration/* branches
+#
+# See: .claude/plans/chart-release-workflows/workflow-5/plan.md
 
 name: Validate Atomic Chart PR
 
@@ -56,185 +52,36 @@ concurrency:
   group: w5-validate-${{ github.event.pull_request.number || github.event.client_payload.pr || github.run_id }}
   cancel-in-progress: false
 
-# Allowed actors for repository_dispatch (W2 uses github-actions[bot])
-env:
-  ALLOWED_DISPATCH_ACTORS: "github-actions[bot]"
-
 jobs:
-  # ==========================================================================
-  # Actor validation for repository_dispatch
-  # ==========================================================================
+  #############################################################################
+  # Generic Validation (via reusable workflow)
+  #############################################################################
+  validate:
+    if: github.event.action != 'closed'
+    uses: aRustyDev/gh/.github/workflows/atomic-release-validate-atomic-pr.yml@atomic-release-v0.1.0
+    with:
+      artifact_path: "charts"
+      manifest_file: "Chart.yaml"
+      branch_pattern: "charts/*"
+      target_branch: "main"
+      lint_command: "ct lint --config ct.yaml --target-branch main"
+      enable_version_bump: ${{ github.event.inputs.skip_version_bump != 'true' }}
+      cliff_config: ".github/cliff.toml"
+      github_app_id_secret_ref: "op://gh-shared/xauth/app/id"
+      github_app_key_secret_ref: "op://gh-shared/xauth/app/private-key.pem"
+    secrets:
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
-  validate-dispatch:
-    if: github.event_name == 'repository_dispatch'
-    runs-on: ubuntu-latest
-    outputs:
-      pr_number: ${{ steps.validate.outputs.pr_number }}
-      chart: ${{ steps.validate.outputs.chart }}
-      actor_valid: ${{ steps.validate.outputs.actor_valid }}
-    steps:
-      - name: Validate Actor and Extract Payload
-        id: validate
-        env:
-          ACTOR: ${{ github.actor }}
-          PAYLOAD_PR: ${{ github.event.client_payload.pr }}
-          PAYLOAD_CHART: ${{ github.event.client_payload.chart }}
-        run: |
-          echo "::group::Dispatch Validation"
-          echo "Actor: $ACTOR"
-          echo "Event type: ${{ github.event.action }}"
-          echo "Payload PR: $PAYLOAD_PR"
-          echo "Payload Chart: $PAYLOAD_CHART"
-          echo "::endgroup::"
-
-          # Validate actor against allowed list
-          ALLOWED="${{ env.ALLOWED_DISPATCH_ACTORS }}"
-          if [[ ! ",$ALLOWED," =~ ",$ACTOR," ]]; then
-            echo "::error::Unauthorized actor: $ACTOR (allowed: $ALLOWED)"
-            echo "actor_valid=false" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-
-          echo "::notice::Actor validated: $ACTOR"
-          echo "actor_valid=true" >> "$GITHUB_OUTPUT"
-
-          # Validate required payload fields
-          if [[ -z "$PAYLOAD_PR" ]]; then
-            echo "::error::Missing required payload field: pr"
-            exit 1
-          fi
-
-          echo "pr_number=$PAYLOAD_PR" >> "$GITHUB_OUTPUT"
-          echo "chart=$PAYLOAD_CHART" >> "$GITHUB_OUTPUT"
-
-      - name: Audit Log Entry
-        run: |
-          echo "::notice::repository_dispatch audit: actor=${{ github.actor }}, event=${{ github.event.action }}, pr=${{ github.event.client_payload.pr }}, chart=${{ github.event.client_payload.chart }}, run_id=${{ github.run_id }}"
-
-  # ==========================================================================
-  # Validation jobs (skip on PR close)
-  # ==========================================================================
-
-  # Phase 5.1: Validate source branch and detect charts
-  validate-and-detect:
-    # Skip validation when PR is closed (cleanup job handles merge)
-    # For repository_dispatch, wait for actor validation first
-    needs: [validate-dispatch]
-    if: |
-      always() &&
-      github.event.action != 'closed' &&
-      (github.event_name != 'repository_dispatch' || needs.validate-dispatch.outputs.actor_valid == 'true')
-    runs-on: ubuntu-latest
-    outputs:
-      charts: ${{ steps.detect.outputs.charts }}
-      has_charts: ${{ steps.detect.outputs.has_charts }}
-      source_valid: ${{ steps.validate.outputs.valid }}
-      pr_number: ${{ steps.context.outputs.pr_number }}
-      head_ref: ${{ steps.context.outputs.head_ref }}
-      base_ref: ${{ steps.context.outputs.base_ref }}
-    steps:
-      - name: Determine PR Context
-        id: context
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          EVENT="${{ github.event_name }}"
-
-          if [[ "$EVENT" == "repository_dispatch" ]]; then
-            PR_NUMBER="${{ github.event.client_payload.pr }}"
-            echo "::notice::repository_dispatch: PR #$PR_NUMBER"
-          elif [[ "$EVENT" == "workflow_dispatch" ]]; then
-            PR_NUMBER="${{ inputs.pr_number }}"
-            echo "::notice::workflow_dispatch: PR #$PR_NUMBER"
-          else
-            PR_NUMBER="${{ github.event.pull_request.number }}"
-            echo "::notice::pull_request: PR #$PR_NUMBER"
-          fi
-
-          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-
-          # For dispatch events, get PR details
-          if [[ "$EVENT" == "repository_dispatch" || "$EVENT" == "workflow_dispatch" ]]; then
-            if [[ -n "$PR_NUMBER" ]]; then
-              PR_DATA=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" --jq '{head_ref: .head.ref, head_sha: .head.sha, base_ref: .base.ref, base_sha: .base.sha}')
-              echo "head_ref=$(echo "$PR_DATA" | jq -r '.head_ref')" >> "$GITHUB_OUTPUT"
-              echo "head_sha=$(echo "$PR_DATA" | jq -r '.head_sha')" >> "$GITHUB_OUTPUT"
-              echo "base_ref=$(echo "$PR_DATA" | jq -r '.base_ref')" >> "$GITHUB_OUTPUT"
-              echo "base_sha=$(echo "$PR_DATA" | jq -r '.base_sha')" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "head_ref=${{ github.head_ref }}" >> "$GITHUB_OUTPUT"
-            echo "head_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
-            echo "base_ref=${{ github.event.pull_request.base.ref }}" >> "$GITHUB_OUTPUT"
-            echo "base_sha=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ steps.context.outputs.head_sha || github.sha }}
-
-      - name: Validate Source Branch
-        id: validate
-        env:
-          HEAD_REF: ${{ steps.context.outputs.head_ref || github.head_ref }}
-        run: |
-          # For workflow_dispatch without PR, skip branch validation
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -z "$HEAD_REF" ]]; then
-            echo "::notice::Workflow dispatch without PR - skipping branch validation"
-            echo "valid=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # For repository_dispatch, validate came from W2
-          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
-            echo "::notice::repository_dispatch from validated actor"
-          fi
-
-          # Validate branch pattern: charts/<chart> (from W2) or integration/<chart>
-          if [[ "$HEAD_REF" =~ ^charts/[a-z0-9-]+$ ]]; then
-            echo "::notice::Valid charts branch: $HEAD_REF"
-            echo "valid=true" >> "$GITHUB_OUTPUT"
-          elif [[ "$HEAD_REF" =~ ^integration/[a-z0-9-]+$ ]]; then
-            echo "::notice::Valid integration branch: $HEAD_REF"
-            echo "valid=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::PR source branch '$HEAD_REF' does not match expected pattern"
-            echo "::warning::Expected: charts/<chart> or integration/<chart>"
-            echo "::warning::Version bumping will be skipped for non-standard branches"
-            echo "valid=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Detect Changed Charts
-        id: detect
-        env:
-          BASE_SHA: ${{ steps.context.outputs.base_sha || 'origin/main' }}
-          HEAD_SHA: ${{ steps.context.outputs.head_sha || 'HEAD' }}
-        run: |
-          source .github/scripts/attestation-lib.sh
-
-          echo "::group::Detecting changed charts"
-          CHARTS=$(detect_changed_charts "$BASE_SHA..$HEAD_SHA")
-          echo "::endgroup::"
-
-          if [[ -z "$CHARTS" ]]; then
-            echo "::notice::No chart changes detected"
-            echo "charts=" >> "$GITHUB_OUTPUT"
-            echo "has_charts=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::Changed charts: $CHARTS"
-            echo "charts=$CHARTS" >> "$GITHUB_OUTPUT"
-            echo "has_charts=true" >> "$GITHUB_OUTPUT"
-          fi
-
-  # Phase 5.2: ArtifactHub metadata linting
+  #############################################################################
+  # Helm-Specific: ArtifactHub Lint
+  #############################################################################
   artifacthub-lint:
-    needs: validate-and-detect
+    name: artifacthub-lint
+    needs: validate
     if: |
       always() &&
-      needs.validate-and-detect.result == 'success' &&
-      needs.validate-and-detect.outputs.has_charts == 'true'
+      needs.validate.result == 'success' &&
+      needs.validate.outputs.artifact != ''
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -254,57 +101,22 @@ jobs:
 
       - name: Lint ArtifactHub Metadata
         run: |
-          CHARTS="${{ needs.validate-and-detect.outputs.charts }}"
+          ARTIFACT="${{ needs.validate.outputs.artifact }}"
+          echo "::group::Linting charts/$ARTIFACT"
+          ah lint --kind helm "charts/$ARTIFACT" || exit 1
+          echo "::endgroup::"
 
-          for chart in $CHARTS; do
-            echo "::group::Linting charts/$chart"
-            ah lint --kind helm "charts/$chart" || exit 1
-            echo "::endgroup::"
-          done
-
-  # Phase 5.3: Helm chart linting
-  helm-lint:
-    needs: validate-and-detect
-    if: |
-      always() &&
-      needs.validate-and-detect.result == 'success' &&
-      needs.validate-and-detect.outputs.has_charts == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: 'latest'
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-
-      - name: Set up chart-testing
-        uses: helm/chart-testing-action@v2.7.0
-
-      - name: Run chart-testing (lint)
-        run: |
-          if [[ "${{ github.event.inputs.test_all }}" == "true" ]]; then
-            ct lint --config ct.yaml --all --target-branch ${{ github.event.repository.default_branch }}
-          else
-            ct lint --config ct.yaml --target-branch ${{ github.event.repository.default_branch }}
-          fi
-
-  # Phase 5.3a: K8s compatibility matrix testing
+  #############################################################################
+  # Helm-Specific: K8s Compatibility Matrix Testing
+  #############################################################################
   k8s-matrix-test:
     name: k8s-test (${{ matrix.k8s_version }})
-    needs: [validate-and-detect, helm-lint]
+    needs: [validate, artifacthub-lint]
     if: |
       always() &&
-      needs.validate-and-detect.result == 'success' &&
-      needs.helm-lint.result == 'success' &&
-      needs.validate-and-detect.outputs.has_charts == 'true'
+      needs.validate.result == 'success' &&
+      needs.artifacthub-lint.result == 'success' &&
+      needs.validate.outputs.artifact != ''
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -344,9 +156,9 @@ jobs:
         run: |
           echo "::group::Installing charts on K8s ${{ matrix.k8s_version }}"
           if [[ "${{ github.event.inputs.test_all }}" == "true" ]]; then
-            ct install --config ct-install.yaml --all --target-branch ${{ github.event.repository.default_branch }}
+            ct install --config ct-install.yaml --all --target-branch main
           else
-            ct install --config ct-install.yaml --target-branch ${{ github.event.repository.default_branch }}
+            ct install --config ct-install.yaml --target-branch main
           fi
           echo "::endgroup::"
 
@@ -354,7 +166,6 @@ jobs:
         id: digest
         if: success()
         run: |
-          # Generate proper SHA256 digest for attestation
           DIGEST=$(echo -n "k8s-test-${{ matrix.k8s_version }}-${{ github.sha }}-${{ github.run_id }}" | sha256sum | cut -d' ' -f1)
           echo "digest=sha256:$DIGEST" >> "$GITHUB_OUTPUT"
 
@@ -367,334 +178,37 @@ jobs:
           subject-digest: ${{ steps.digest.outputs.digest }}
           push-to-registry: false
 
-  # Phase 5.6: Version bump and changelog generation
-  version-bump:
-    needs: [validate-and-detect, artifacthub-lint, helm-lint, k8s-matrix-test]
-    if: |
-      always() &&
-      needs.validate-and-detect.outputs.has_charts == 'true' &&
-      needs.validate-and-detect.outputs.source_valid == 'true' &&
-      needs.artifacthub-lint.result == 'success' &&
-      needs.helm-lint.result == 'success' &&
-      needs.k8s-matrix-test.result == 'success' &&
-      github.event.inputs.skip_version_bump != 'true'
-    runs-on: ubuntu-latest
-    outputs:
-      bumped: ${{ steps.bump.outputs.bumped }}
-      version: ${{ steps.bump.outputs.version }}
-      bump_type: ${{ steps.bump.outputs.bump_type }}
-    steps:
-      - name: Load secrets from 1Password
-        id: op-secrets
-        uses: 1password/load-secrets-action@v3
-        with:
-          export-env: false
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          X_REPO_AUTH_APP_ID: op://gh-shared/xauth/app/id
-          X_REPO_AUTH_PRIVATE_KEY: op://gh-shared/xauth/app/private-key.pem
-
-      - name: Generate GitHub App Token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
-          private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
-
-      - name: Checkout PR Branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.validate-and-detect.outputs.head_ref }}
-          fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
-
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Install git-cliff
-        run: |
-          echo "::group::Installing git-cliff"
-          curl -sSL https://github.com/orhun/git-cliff/releases/download/v2.7.0/git-cliff-2.7.0-x86_64-unknown-linux-gnu.tar.gz | tar xz
-          sudo mv git-cliff-2.7.0/git-cliff /usr/local/bin/
-          git-cliff --version
-          echo "::endgroup::"
-
-      - name: Bump Version and Generate Changelog
-        id: bump
-        run: |
-          source .github/scripts/version-bump.sh
-
-          CHARTS="${{ needs.validate-and-detect.outputs.charts }}"
-          BASE_REF="origin/${{ needs.validate-and-detect.outputs.base_ref }}"
-
-          BUMPED_CHARTS=""
-          BUMP_RESULTS=""
-
-          for chart in $CHARTS; do
-            echo "::group::Processing $chart"
-
-            # Run version bump
-            bump_chart_version "$chart" "$BASE_REF"
-
-            # Capture results from GITHUB_OUTPUT
-            if grep -q "bumped=true" "$GITHUB_OUTPUT" 2>/dev/null; then
-              VERSION=$(grep "version=" "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2)
-              BUMP_TYPE=$(grep "bump_type=" "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2)
-              BUMPED_CHARTS="${BUMPED_CHARTS} ${chart}"
-              BUMP_RESULTS="${BUMP_RESULTS}${chart}:${VERSION}:${BUMP_TYPE} "
-              echo "::notice::Bumped $chart to $VERSION ($BUMP_TYPE)"
-            else
-              echo "::notice::$chart version already bumped or no changes"
-            fi
-
-            echo "::endgroup::"
-          done
-
-          if [[ -n "$BUMPED_CHARTS" ]]; then
-            echo "bumped=true" >> "$GITHUB_OUTPUT"
-            echo "charts=$BUMPED_CHARTS" >> "$GITHUB_OUTPUT"
-            echo "results=$BUMP_RESULTS" >> "$GITHUB_OUTPUT"
-          else
-            echo "bumped=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Commit Version Bump
-        id: commit
-        if: steps.bump.outputs.bumped == 'true'
-        run: |
-          CHARTS="${{ steps.bump.outputs.charts }}"
-
-          # Stage all chart changes
-          for chart in $CHARTS; do
-            git add "charts/$chart/Chart.yaml" "charts/$chart/CHANGELOG.md" || true
-          done
-
-          # Check if there are changes to commit
-          if git diff --cached --quiet; then
-            echo "::notice::No changes to commit"
-            echo "committed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Create commit
-          git commit -m "chore(release): bump versions for ${CHARTS}
-
-          Automated version bump based on conventional commits.
-
-          Charts updated: ${CHARTS}
-
-          Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
-
-          # Push to PR branch
-          git push origin HEAD:${{ needs.validate-and-detect.outputs.head_ref }}
-
-          echo "committed=true" >> "$GITHUB_OUTPUT"
-          echo "::notice::Committed and pushed version bump"
-
-  # Phase 5.7: Update attestation map in PR
-  update-attestation:
-    needs: [validate-and-detect, k8s-matrix-test, version-bump]
-    if: |
-      always() &&
-      needs.validate-and-detect.outputs.has_charts == 'true' &&
-      needs.k8s-matrix-test.result == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Update PR Description with Attestation Map
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          source .github/scripts/attestation-lib.sh
-
-          PR_NUMBER="${{ needs.validate-and-detect.outputs.pr_number }}"
-          CHARTS="${{ needs.validate-and-detect.outputs.charts }}"
-
-          # Build attestation map
-          ATTESTATION_MAP="{"
-          for chart in $CHARTS; do
-            CHART_YAML="charts/$chart/Chart.yaml"
-            if [[ -f "$CHART_YAML" ]]; then
-              VERSION=$(grep '^version:' "$CHART_YAML" | awk '{print $2}' | tr -d '"' | tr -d "'")
-              ATTESTATION_MAP="${ATTESTATION_MAP}\"${chart}\": {\"version\": \"${VERSION}\", \"w5_run\": \"${{ github.run_id }}\", \"k8s_versions\": [\"v1.32.11\", \"v1.33.7\", \"v1.34.3\"]},"
-            fi
-          done
-          ATTESTATION_MAP="${ATTESTATION_MAP%,}}"
-
-          # Get current PR body
-          CURRENT_BODY=$(gh pr view "$PR_NUMBER" --json body -q '.body')
-
-          # Check if attestation section already exists
-          if echo "$CURRENT_BODY" | grep -q "<!-- W5_ATTESTATION_MAP -->"; then
-            # Update existing attestation section
-            NEW_BODY=$(echo "$CURRENT_BODY" | sed '/<!-- W5_ATTESTATION_MAP -->/,/<!-- \/W5_ATTESTATION_MAP -->/c\<!-- W5_ATTESTATION_MAP -->\n```json\n'"$ATTESTATION_MAP"'\n```\n<!-- /W5_ATTESTATION_MAP -->')
-          else
-            # Append attestation section
-            NEW_BODY="$CURRENT_BODY
-
-          ---
-
-          ## W5 Validation Attestation
-
-          <!-- W5_ATTESTATION_MAP -->
-          \`\`\`json
-          $ATTESTATION_MAP
-          \`\`\`
-          <!-- /W5_ATTESTATION_MAP -->
-
-          *Updated by W5 - PR Validation workflow*"
-          fi
-
-          # Update PR description
-          gh pr edit "$PR_NUMBER" --body "$NEW_BODY"
-          echo "::notice::Updated PR description with attestation map"
-
-  # Summary job (validation runs)
-  summary:
-    needs: [validate-and-detect, artifacthub-lint, helm-lint, k8s-matrix-test, version-bump, update-attestation]
-    if: always() && github.event.action != 'closed'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Generate Summary
-        run: |
-          {
-            echo "## Validate Atomic Chart PR - Summary"
-            echo ""
-            echo "### Validation Results"
-            echo "| Check | Status |"
-            echo "|-------|--------|"
-            echo "| Source Branch Valid | ${{ needs.validate-and-detect.outputs.source_valid == 'true' && ':white_check_mark:' || ':warning:' }} |"
-            echo "| Charts Detected | ${{ needs.validate-and-detect.outputs.has_charts == 'true' && ':white_check_mark:' || ':x:' }} |"
-            echo "| ArtifactHub Lint | ${{ needs.artifacthub-lint.result == 'success' && ':white_check_mark:' || (needs.artifacthub-lint.result == 'skipped' && ':heavy_minus_sign:' || ':x:') }} |"
-            echo "| Helm Lint | ${{ needs.helm-lint.result == 'success' && ':white_check_mark:' || (needs.helm-lint.result == 'skipped' && ':heavy_minus_sign:' || ':x:') }} |"
-            echo "| K8s Matrix Test | ${{ needs.k8s-matrix-test.result == 'success' && ':white_check_mark:' || (needs.k8s-matrix-test.result == 'skipped' && ':heavy_minus_sign:' || ':x:') }} |"
-            echo "| Version Bump | ${{ needs.version-bump.result == 'success' && ':white_check_mark:' || (needs.version-bump.result == 'skipped' && ':heavy_minus_sign:' || ':x:') }} |"
-            echo "| Attestation Update | ${{ needs.update-attestation.result == 'success' && ':white_check_mark:' || (needs.update-attestation.result == 'skipped' && ':heavy_minus_sign:' || ':x:') }} |"
-            echo ""
-            if [[ "${{ needs.validate-and-detect.outputs.has_charts }}" == "true" ]]; then
-              echo "### Charts Processed"
-              echo "- Charts: ${{ needs.validate-and-detect.outputs.charts }}"
-              echo ""
-            fi
-            if [[ "${{ needs.version-bump.outputs.bumped }}" == "true" ]]; then
-              echo "### Version Bump"
-              echo "- Version: ${{ needs.version-bump.outputs.version }}"
-              echo "- Bump Type: ${{ needs.version-bump.outputs.bump_type }}"
-              echo ""
-            fi
-            echo "### Next Steps"
-            echo "When this PR is merged to main:"
-            echo "1. Source branch will be automatically deleted"
-            echo "2. **release-atomic-chart** workflow will tag, package, and publish"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # ==========================================================================
-  # Cleanup job (runs only on PR merge)
-  # ==========================================================================
-  cleanup-branch:
-    if: github.event.action == 'closed' && github.event.pull_request.merged == true
-    runs-on: ubuntu-latest
-    steps:
-      - name: Load secrets from 1Password
-        id: op-secrets
-        uses: 1password/load-secrets-action@v3
-        with:
-          export-env: false
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          X_REPO_AUTH_APP_ID: op://gh-shared/xauth/app/id
-          X_REPO_AUTH_PRIVATE_KEY: op://gh-shared/xauth/app/private-key.pem
-
-      - name: Generate GitHub App Token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
-          private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-
-      - name: Delete Source Branch
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          HEAD_REF="${{ github.event.pull_request.head.ref }}"
-
-          echo "::notice::PR merged, cleaning up branch: $HEAD_REF"
-
-          # Delete the source branch
-          if git ls-remote --heads origin "$HEAD_REF" | grep -q "$HEAD_REF"; then
-            git push origin --delete "$HEAD_REF"
-            echo "::notice::Deleted branch: $HEAD_REF"
-          else
-            echo "::notice::Branch $HEAD_REF already deleted"
-          fi
-
-      - name: Generate Summary
-        run: |
-          {
-            echo "## Validate Atomic Chart PR - Cleanup"
-            echo ""
-            echo "PR #${{ github.event.pull_request.number }} was merged."
-            echo ""
-            echo "### Actions Taken"
-            echo "- :white_check_mark: Deleted source branch: \`${{ github.event.pull_request.head.ref }}\`"
-            echo ""
-            echo "### Next Steps"
-            echo "The **release-atomic-chart** workflow will now:"
-            echo "1. Create git tags for each chart"
-            echo "2. Package charts and generate attestations"
-            echo "3. Publish to GHCR with Cosign signing"
-            echo "4. Create GitHub Releases"
-            echo "5. Update the release branch"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # ==========================================================================
+  #############################################################################
   # Skip jobs (satisfy required checks when no charts change)
-  # ==========================================================================
+  #############################################################################
   artifacthub-lint-skip:
     name: artifacthub-lint
-    needs: validate-and-detect
-    if: needs.validate-and-detect.outputs.has_charts != 'true' && github.event.action != 'closed'
+    needs: validate
+    if: needs.validate.outputs.artifact == '' && github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - run: echo "No chart changes detected, skipping ArtifactHub lint"
 
-  helm-lint-skip:
-    name: helm-lint
-    needs: validate-and-detect
-    if: needs.validate-and-detect.outputs.has_charts != 'true' && github.event.action != 'closed'
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "No chart changes detected, skipping Helm lint"
-
   k8s-test-skip-v1-32:
     name: k8s-test (v1.32.11)
-    needs: validate-and-detect
-    if: needs.validate-and-detect.outputs.has_charts != 'true' && github.event.action != 'closed'
+    needs: validate
+    if: needs.validate.outputs.artifact == '' && github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - run: echo "No chart changes detected, skipping K8s v1.32.11 test"
 
   k8s-test-skip-v1-33:
     name: k8s-test (v1.33.7)
-    needs: validate-and-detect
-    if: needs.validate-and-detect.outputs.has_charts != 'true' && github.event.action != 'closed'
+    needs: validate
+    if: needs.validate.outputs.artifact == '' && github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - run: echo "No chart changes detected, skipping K8s v1.33.7 test"
 
   k8s-test-skip-v1-34:
     name: k8s-test (v1.34.3)
-    needs: validate-and-detect
-    if: needs.validate-and-detect.outputs.has_charts != 'true' && github.event.action != 'closed'
+    needs: validate
+    if: needs.validate.outputs.artifact == '' && github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - run: echo "No chart changes detected, skipping K8s v1.34.3 test"

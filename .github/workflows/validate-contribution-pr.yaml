@@ -1,17 +1,14 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+#
 # Workflow 1: Validate Initial Contribution
 #
 # Validates contributions to the integration branch with comprehensive checks
 # and generates attestations for each validation step.
 #
+# Calls reusable workflow from aRustyDev/gh for generic validation,
+# plus local Helm-specific jobs (ArtifactHub lint).
+#
 # Trigger: Pull request targeting the integration branch
-#
-# Jobs:
-#   - lint-test: Chart linting and installation testing (matrix: K8s versions)
-#   - artifacthub-lint: ArtifactHub metadata validation
-#   - commit-validation: Conventional commit message validation
-#   - changelog: Per-chart changelog generation
-#
-# Each job generates a GitHub attestation stored in the PR description.
 #
 # See: .claude/plans/chart-release-workflows/workflow-1/plan.md
 
@@ -29,7 +26,6 @@ on:
         default: false
         type: boolean
 
-# Permissions required for attestations and PR updates
 permissions:
   contents: read
   pull-requests: write
@@ -37,111 +33,31 @@ permissions:
   attestations: write
 
 env:
-  # Target branch for chart-testing comparisons
   TARGET_BRANCH: integration
 
 jobs:
   #############################################################################
-  # Detect changed charts and prepare for parallel jobs
+  # Generic Validation (via reusable workflow)
   #############################################################################
-  detect-changes:
-    name: Detect Changes
-    runs-on: ubuntu-latest
-    outputs:
-      charts_changed: ${{ steps.detect.outputs.charts_changed }}
-      changed_charts: ${{ steps.detect.outputs.changed_charts }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Detect changed charts
-        id: detect
-        run: |
-          source .github/scripts/attestation-lib.sh
-
-          # Detect changes against target branch
-          CHANGED=$(detect_changed_charts "" "$TARGET_BRANCH")
-
-          if [[ -n "$CHANGED" ]]; then
-            echo "charts_changed=true" >> "$GITHUB_OUTPUT"
-            echo "changed_charts=$CHANGED" >> "$GITHUB_OUTPUT"
-          else
-            echo "charts_changed=false" >> "$GITHUB_OUTPUT"
-            echo "changed_charts=" >> "$GITHUB_OUTPUT"
-          fi
+  validate:
+    uses: aRustyDev/gh/.github/workflows/atomic-release-validate-contribution.yml@atomic-release-v0.1.0
+    with:
+      artifact_path: "charts"
+      manifest_file: "Chart.yaml"
+      target_branch: "integration"
+      lint_command: "ct lint --config ct.yaml --target-branch $TARGET_BRANCH"
+      commitlint_config: "commitlint.config.mjs"
+      generate_changelog: true
+      cliff_config: ".github/cliff.toml"
+      test_all: ${{ github.event.inputs.test_all == 'true' }}
 
   #############################################################################
-  # Lint Charts (Static Analysis)
-  # NOTE: ct install (K8s deployment tests) moved to W5 for per-chart testing
-  #############################################################################
-  lint:
-    name: lint
-    needs: detect-changes
-    if: needs.detect-changes.outputs.charts_changed == 'true' || github.event.inputs.test_all == true
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: v3.14.0
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-
-      - name: Set up chart-testing
-        uses: helm/chart-testing-action@v2.8.0
-
-      - name: Run chart-testing (lint)
-        id: lint
-        run: |
-          if [[ "${{ github.event.inputs.test_all }}" == "true" ]]; then
-            ct lint --config ct.yaml --all --target-branch "$TARGET_BRANCH"
-          else
-            ct lint --config ct.yaml --target-branch "$TARGET_BRANCH"
-          fi
-
-      - name: Generate lint digest
-        id: digest
-        run: |
-          # Create a digest of the lint results for attestation
-          DIGEST=$(echo -n "lint-${{ github.sha }}" | sha256sum | cut -d' ' -f1)
-          echo "digest=sha256:$DIGEST" >> "$GITHUB_OUTPUT"
-
-      - name: Generate attestation
-        id: attestation
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: "w1-lint"
-          subject-digest: ${{ steps.digest.outputs.digest }}
-          push-to-registry: false
-
-      - name: Update attestation map
-        if: github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          source .github/scripts/attestation-lib.sh
-          update_attestation_map \
-            "lint" \
-            "${{ steps.attestation.outputs.attestation-id }}"
-
-  #############################################################################
-  # ArtifactHub Metadata Lint
+  # Helm-Specific: ArtifactHub Metadata Lint
   #############################################################################
   artifacthub-lint:
     name: artifacthub-lint
-    needs: detect-changes
-    if: needs.detect-changes.outputs.charts_changed == 'true' || github.event.inputs.test_all == true
+    if: needs.validate.outputs.artifacts_changed == 'true' || github.event.inputs.test_all == 'true'
+    needs: validate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -200,158 +116,12 @@ jobs:
             "${{ steps.attestation.outputs.attestation-id }}"
 
   #############################################################################
-  # Commit Message Validation
-  #############################################################################
-  commit-validation:
-    name: commit-validation
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Validate commit messages
-        id: commitlint
-        uses: wagoid/commitlint-github-action@v6
-        with:
-          configFile: commitlint.config.mjs
-
-      - name: Generate validation digest
-        id: digest
-        run: |
-          DIGEST=$(echo -n "commit-validation-${{ github.sha }}" | sha256sum | cut -d' ' -f1)
-          echo "digest=sha256:$DIGEST" >> "$GITHUB_OUTPUT"
-
-      - name: Generate attestation
-        id: attestation
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: "w1-commit-validation"
-          subject-digest: ${{ steps.digest.outputs.digest }}
-          push-to-registry: false
-
-      - name: Update attestation map
-        if: github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          source .github/scripts/attestation-lib.sh
-          update_attestation_map \
-            "commit-validation" \
-            "${{ steps.attestation.outputs.attestation-id }}"
-
-  #############################################################################
-  # Changelog Generation (Per-Chart)
-  #############################################################################
-  changelog:
-    name: changelog
-    needs: detect-changes
-    if: needs.detect-changes.outputs.charts_changed == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install git-cliff
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Get latest version
-          GIT_CLIFF_VERSION=$(gh api repos/orhun/git-cliff/releases/latest --jq '.tag_name' | sed 's/^v//')
-          if [ -z "$GIT_CLIFF_VERSION" ] || [ "$GIT_CLIFF_VERSION" = "null" ]; then
-            echo "Failed to get git-cliff version, using fallback"
-            GIT_CLIFF_VERSION="2.7.0"
-          fi
-          echo "Installing git-cliff v${GIT_CLIFF_VERSION}"
-          curl -sSL "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar xz
-          sudo mv git-cliff-${GIT_CLIFF_VERSION}/git-cliff /usr/local/bin/
-          git-cliff --version
-
-      - name: Generate changelogs for changed charts
-        id: changelog
-        env:
-          CHANGED_CHARTS: ${{ needs.detect-changes.outputs.changed_charts }}
-          TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
-        run: |
-          echo "# Changelog Preview" > changelog.md
-          echo "" >> changelog.md
-
-          for chart in $CHANGED_CHARTS; do
-            echo "::group::Generating changelog for $chart"
-            echo "## $chart" >> changelog.md
-            echo "" >> changelog.md
-
-            # Generate changelog for this chart only (compare against target branch, not tags)
-            # Capture stderr separately to avoid warnings in output
-            CHANGELOG_OUTPUT=$(git-cliff \
-              --config .github/cliff.toml \
-              --include-path "charts/$chart/**/*" \
-              "origin/$TARGET_BRANCH..HEAD" \
-              --strip header 2>/dev/null) || true
-
-            if [[ -n "$CHANGELOG_OUTPUT" && ! "$CHANGELOG_OUTPUT" =~ ^[[:space:]]*$ ]]; then
-              echo "$CHANGELOG_OUTPUT" >> changelog.md
-            else
-              echo "_No conventional commits found for this chart._" >> changelog.md
-            fi
-
-            echo "" >> changelog.md
-            echo "::endgroup::"
-          done
-
-          cat changelog.md
-
-      - name: Add changelog comment to PR
-        if: github.event_name == 'pull_request'
-        uses: peter-evans/create-or-update-comment@v4
-        with:
-          issue-number: ${{ github.event.pull_request.number }}
-          body-path: changelog.md
-
-      - name: Generate changelog digest
-        id: digest
-        run: |
-          DIGEST=$(sha256sum changelog.md | cut -d' ' -f1)
-          echo "digest=sha256:$DIGEST" >> "$GITHUB_OUTPUT"
-
-      - name: Generate attestation
-        id: attestation
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: "w1-changelog"
-          subject-digest: ${{ steps.digest.outputs.digest }}
-          push-to-registry: false
-
-      - name: Update attestation map
-        if: github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          source .github/scripts/attestation-lib.sh
-          update_attestation_map \
-            "changelog" \
-            "${{ steps.attestation.outputs.attestation-id }}"
-
-  #############################################################################
   # Skip jobs for no-change scenarios (satisfies required checks)
   #############################################################################
-  lint-skip:
-    name: lint
-    needs: detect-changes
-    if: needs.detect-changes.outputs.charts_changed != 'true' && github.event.inputs.test_all != true
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "No chart changes detected, skipping lint"
-
   artifacthub-lint-skip:
     name: artifacthub-lint
-    needs: detect-changes
-    if: needs.detect-changes.outputs.charts_changed != 'true' && github.event.inputs.test_all != true
+    needs: validate
+    if: needs.validate.outputs.artifacts_changed != 'true' && github.event.inputs.test_all != 'true'
     runs-on: ubuntu-latest
     steps:
       - run: echo "No chart changes detected, skipping artifacthub-lint"

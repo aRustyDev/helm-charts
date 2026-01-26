@@ -1,21 +1,16 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+#
 # Release Atomic Chart (W6)
 #
 # Tag-based workflow for packaging and publishing Helm charts.
 # Triggered when chart tags are pushed (<chart>-v<version>).
 #
-# This workflow:
-#   1. Validates tag format matches <chart>-v<version> pattern
-#   2. Validates chart directory exists in charts/<chart>
-#   3. Validates Chart.yaml version matches tag version
-#   4. Packages charts and generates build attestations
-#   5. Publishes to GHCR with Cosign signing
-#   6. Creates GitHub Releases with signatures
-#   7. Updates release branch with packages and index.yaml
+# Calls reusable workflow from aRustyDev/gh for generic release logic,
+# plus local Helm-specific jobs (update release branch).
 #
 # Tags are created by:
-#   - Release-please (automated version bumps)
+#   - W6-tag workflow (tag-atomic-chart.yaml)
 #   - Manual tagging for hotfixes
-#   - W6-tag workflow (future)
 
 name: Release Atomic Chart
 
@@ -25,7 +20,6 @@ on:
       - '*-v*'  # Matches: cloudflared-v0.1.0, test-workflow-v1.2.3, etc.
 
   # Manual trigger via GitHub API with App token (more secure than workflow_dispatch)
-  # Usage: gh api repos/:owner/:repo/dispatches -f event_type=release-chart -f client_payload='{"tag":"cloudflared-v0.1.0"}'
   repository_dispatch:
     types: [release-chart]
 
@@ -41,383 +35,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ==========================================================================
-  # Phase 1: Validate tag and extract chart info
-  # ==========================================================================
-  validate-tag:
-    runs-on: ubuntu-latest
-    outputs:
-      chart: ${{ steps.parse.outputs.chart }}
-      version: ${{ steps.parse.outputs.version }}
-      tag: ${{ steps.parse.outputs.tag }}
-      valid: ${{ steps.validate.outputs.valid }}
-    steps:
-      - name: Parse Tag
-        id: parse
-        run: |
-          # Determine tag from trigger type
-          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
-            TAG="${{ github.event.client_payload.tag }}"
-            if [[ -z "$TAG" ]]; then
-              echo "::error::repository_dispatch requires client_payload.tag"
-              echo "::error::Usage: gh api repos/:owner/:repo/dispatches -f event_type=release-chart -f client_payload='{\"tag\":\"chart-v1.0.0\"}'"
-              exit 1
-            fi
-            echo "::notice::Manual release via repository_dispatch"
-          else
-            TAG="${GITHUB_REF_NAME}"
-          fi
+  #############################################################################
+  # Generic Release (via reusable workflow)
+  #############################################################################
+  release:
+    uses: aRustyDev/gh/.github/workflows/atomic-release-publish-release.yml@atomic-release-v0.1.0
+    with:
+      artifact_path: "charts"
+      manifest_file: "Chart.yaml"
+      tag_pattern: "*-v*"
+      build_command: "helm package charts/$ARTIFACT -d .release-packages/"
+      publish_command: "helm push .release-packages/$ARTIFACT-$VERSION.tgz oci://ghcr.io/${REPO,,}"
+      package_glob: ".release-packages/*.tgz"
+      enable_cosign: true
+      create_github_release: true
+      github_app_id_secret_ref: "op://gh-shared/xauth/app/id"
+      github_app_key_secret_ref: "op://gh-shared/xauth/app/private-key.pem"
+    secrets:
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
-          echo "::notice::Processing tag: $TAG"
-
-          # Validate tag format: <chart>-v<version>
-          # Chart names can contain hyphens, so we match from the right
-          # Pattern: everything before last "-v" is chart name, after is version
-          if [[ ! "$TAG" =~ ^(.+)-v([0-9]+\.[0-9]+\.[0-9]+.*)$ ]]; then
-            echo "::error::Invalid tag format: $TAG"
-            echo "::error::Expected format: <chart>-v<version> (e.g., cloudflared-v0.1.0)"
-            exit 1
-          fi
-
-          CHART="${BASH_REMATCH[1]}"
-          VERSION="${BASH_REMATCH[2]}"
-
-          echo "chart=$CHART" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
-          echo "::notice::Chart: $CHART"
-          echo "::notice::Version: $VERSION"
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.parse.outputs.tag }}
-
-      - name: Validate Chart Exists
-        id: validate
-        run: |
-          CHART="${{ steps.parse.outputs.chart }}"
-          VERSION="${{ steps.parse.outputs.version }}"
-          CHART_DIR="charts/$CHART"
-          CHART_YAML="$CHART_DIR/Chart.yaml"
-
-          echo "::group::Validating chart: $CHART"
-
-          # Check chart directory exists
-          if [[ ! -d "$CHART_DIR" ]]; then
-            echo "::error::Chart directory not found: $CHART_DIR"
-            echo "::error::Tag '${{ steps.parse.outputs.tag }}' does not match any chart in charts/"
-            echo "valid=false" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-
-          # Check Chart.yaml exists
-          if [[ ! -f "$CHART_YAML" ]]; then
-            echo "::error::Chart.yaml not found: $CHART_YAML"
-            echo "valid=false" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-
-          # Validate version matches
-          CHART_VERSION=$(grep '^version:' "$CHART_YAML" | awk '{print $2}' | tr -d '"' | tr -d "'")
-          if [[ -z "$CHART_VERSION" ]]; then
-            echo "::error::Could not extract version from $CHART_YAML"
-            echo "valid=false" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-
-          if [[ "$CHART_VERSION" != "$VERSION" ]]; then
-            echo "::error::Version mismatch!"
-            echo "::error::Tag version: $VERSION"
-            echo "::error::Chart.yaml version: $CHART_VERSION"
-            echo "::error::Tag and Chart.yaml versions must match"
-            echo "valid=false" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-
-          echo "::notice::Chart validated successfully"
-          echo "::notice::  Directory: $CHART_DIR"
-          echo "::notice::  Version: $VERSION"
-          echo "valid=true" >> "$GITHUB_OUTPUT"
-
-          echo "::endgroup::"
-
-  # ==========================================================================
-  # Phase 2: Package chart and generate attestations
-  # ==========================================================================
-  package-chart:
-    needs: validate-tag
-    if: needs.validate-tag.outputs.valid == 'true'
-    runs-on: ubuntu-latest
-    outputs:
-      package: ${{ steps.build.outputs.package }}
-      package_name: ${{ steps.build.outputs.package_name }}
-      digest: ${{ steps.build.outputs.digest }}
-    steps:
-      - name: Checkout Tag
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.validate-tag.outputs.tag }}
-
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: 'latest'
-
-      - name: Build Package
-        id: build
-        run: |
-          CHART="${{ needs.validate-tag.outputs.chart }}"
-          VERSION="${{ needs.validate-tag.outputs.version }}"
-
-          mkdir -p .cr-release-packages
-
-          echo "::group::Building $CHART-$VERSION.tgz"
-          helm package "charts/$CHART" -d .cr-release-packages/
-          echo "::endgroup::"
-
-          PACKAGE_NAME="${CHART}-${VERSION}.tgz"
-          PACKAGE_FILE=".cr-release-packages/$PACKAGE_NAME"
-
-          if [[ ! -f "$PACKAGE_FILE" ]]; then
-            echo "::error::Package not created: $PACKAGE_FILE"
-            exit 1
-          fi
-
-          DIGEST=$(sha256sum "$PACKAGE_FILE" | cut -d' ' -f1)
-
-          echo "package=$PACKAGE_FILE" >> "$GITHUB_OUTPUT"
-          echo "package_name=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
-          echo "digest=sha256:$DIGEST" >> "$GITHUB_OUTPUT"
-
-          echo "::notice::Package: $PACKAGE_NAME"
-          echo "::notice::Digest: sha256:$DIGEST"
-
-      - name: Generate Build Attestation
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: ${{ steps.build.outputs.package }}
-
-      - name: Upload Package Artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: chart-package-${{ needs.validate-tag.outputs.chart }}-${{ needs.validate-tag.outputs.version }}
-          path: ${{ steps.build.outputs.package }}
-          retention-days: 7
-
-  # ==========================================================================
-  # Phase 3: Publish to all distribution channels
-  # ==========================================================================
-  publish-release:
-    needs: [validate-tag, package-chart]
-    if: needs.validate-tag.outputs.valid == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download Package
-        uses: actions/download-artifact@v7
-        with:
-          name: chart-package-${{ needs.validate-tag.outputs.chart }}-${{ needs.validate-tag.outputs.version }}
-          path: .cr-release-packages/
-
-      - name: Verify Package
-        id: verify
-        run: |
-          CHART="${{ needs.validate-tag.outputs.chart }}"
-          VERSION="${{ needs.validate-tag.outputs.version }}"
-          PACKAGE_NAME="${CHART}-${VERSION}.tgz"
-          PACKAGE_FILE=".cr-release-packages/$PACKAGE_NAME"
-
-          if [[ ! -f "$PACKAGE_FILE" ]]; then
-            echo "::error::Package not found: $PACKAGE_FILE"
-            ls -la .cr-release-packages/
-            exit 1
-          fi
-
-          DIGEST=$(sha256sum "$PACKAGE_FILE" | cut -d' ' -f1)
-
-          echo "package=$PACKAGE_FILE" >> "$GITHUB_OUTPUT"
-          echo "package_name=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
-          echo "digest=sha256:$DIGEST" >> "$GITHUB_OUTPUT"
-
-      - name: Load secrets from 1Password
-        id: op-secrets
-        uses: 1password/load-secrets-action@v3
-        with:
-          export-env: false
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          X_REPO_AUTH_APP_ID: op://gh-shared/xauth/app/id
-          X_REPO_AUTH_PRIVATE_KEY: op://gh-shared/xauth/app/private-key.pem
-
-      - name: Generate GitHub App Token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
-          private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
-
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: 'latest'
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
-
-      - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish to GHCR
-        id: publish-ghcr
-        run: |
-          CHART="${{ needs.validate-tag.outputs.chart }}"
-          VERSION="${{ needs.validate-tag.outputs.version }}"
-          PACKAGE="${{ steps.verify.outputs.package }}"
-
-          REGISTRY="ghcr.io/${{ github.repository }}"
-          REGISTRY="${REGISTRY,,}"  # lowercase
-
-          MAX_RETRIES=3
-          RETRY_DELAY=5
-
-          for ((attempt=1; attempt<=MAX_RETRIES; attempt++)); do
-            echo "::group::Push attempt $attempt/$MAX_RETRIES"
-
-            if PUSH_OUTPUT=$(helm push "$PACKAGE" "oci://$REGISTRY" 2>&1); then
-              echo "$PUSH_OUTPUT"
-              OCI_DIGEST=$(echo "$PUSH_OUTPUT" | grep -oP 'Digest: \Ksha256:[a-f0-9]+' || true)
-
-              if [[ -n "$OCI_DIGEST" ]]; then
-                echo "::notice::Pushed $CHART:$VERSION to GHCR"
-                echo "::endgroup::"
-                break
-              fi
-            fi
-
-            echo "::warning::Attempt $attempt failed"
-            echo "$PUSH_OUTPUT"
-            echo "::endgroup::"
-
-            if [[ $attempt -lt $MAX_RETRIES ]]; then
-              sleep $RETRY_DELAY
-              RETRY_DELAY=$((RETRY_DELAY * 2))
-            else
-              echo "::error::Failed to push to GHCR after $MAX_RETRIES attempts"
-              exit 1
-            fi
-          done
-
-          # Sign with Cosign
-          echo "::group::Signing with Cosign"
-          cosign sign --yes "$REGISTRY/$CHART@$OCI_DIGEST"
-          echo "::notice::Signed $CHART@$OCI_DIGEST"
-          echo "::endgroup::"
-
-          echo "oci_digest=$OCI_DIGEST" >> "$GITHUB_OUTPUT"
-          echo "oci_url=$REGISTRY/$CHART:$VERSION" >> "$GITHUB_OUTPUT"
-          echo "oci_registry=$REGISTRY" >> "$GITHUB_OUTPUT"
-
-      - name: Create GitHub Release
-        id: create-release
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          CHART="${{ needs.validate-tag.outputs.chart }}"
-          VERSION="${{ needs.validate-tag.outputs.version }}"
-          TAG="${{ needs.validate-tag.outputs.tag }}"
-          PACKAGE="${{ steps.verify.outputs.package }}"
-          DIGEST="${{ steps.verify.outputs.digest }}"
-          OCI_DIGEST="${{ steps.publish-ghcr.outputs.oci_digest }}"
-          OCI_REGISTRY="${{ steps.publish-ghcr.outputs.oci_registry }}"
-
-          # Check if release exists
-          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "::notice::Release $TAG already exists"
-            RELEASE_URL=$(gh release view "$TAG" --repo "${{ github.repository }}" --json url -q '.url')
-            echo "release_url=$RELEASE_URL" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Sign package blob
-          cosign sign-blob --yes --output-signature "${PACKAGE}.sig" "$PACKAGE"
-
-          # Create attestation lineage file
-          cat > "${CHART}-attestation-lineage.json" <<EOF
-          {
-            "chart": "$CHART",
-            "version": "$VERSION",
-            "tag": "$TAG",
-            "package_digest": "$DIGEST",
-            "oci_digest": "$OCI_DIGEST",
-            "oci_url": "$OCI_REGISTRY/$CHART:$VERSION",
-            "published_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "workflow_run_id": "${{ github.run_id }}",
-            "commit": "${{ github.sha }}"
-          }
-          EOF
-
-          # Generate release notes
-          RELEASE_NOTES=$(cat <<EOF
-          ## $CHART v$VERSION
-
-          ### Installation
-
-          \`\`\`bash
-          # Option 1: From GHCR (OCI) - Recommended
-          helm install $CHART oci://$OCI_REGISTRY/$CHART --version $VERSION
-
-          # Option 2: From Helm Repository
-          helm repo add arustydev https://charts.arusty.dev
-          helm repo update
-          helm install $CHART arustydev/$CHART --version $VERSION
-          \`\`\`
-
-          ### Verification
-
-          \`\`\`bash
-          # Verify OCI signature
-          cosign verify $OCI_REGISTRY/$CHART@$OCI_DIGEST
-
-          # Verify attestations
-          gh attestation verify oci://$OCI_REGISTRY/$CHART:$VERSION --repo ${{ github.repository }}
-          \`\`\`
-
-          ### Checksums
-
-          | File | SHA256 |
-          |------|--------|
-          | \`${CHART}-${VERSION}.tgz\` | \`${DIGEST#sha256:}\` |
-          | OCI Image | \`${OCI_DIGEST}\` |
-
-          ---
-          *Released by Chart Release Pipeline*
-          EOF
-          )
-
-          # Create release
-          gh release create "$TAG" \
-            --repo "${{ github.repository }}" \
-            --title "$CHART v$VERSION" \
-            --notes "$RELEASE_NOTES" \
-            "$PACKAGE" \
-            "${PACKAGE}.sig" \
-            "${CHART}-attestation-lineage.json"
-
-          RELEASE_URL=$(gh release view "$TAG" --repo "${{ github.repository }}" --json url -q '.url')
-          echo "::notice::Created release: $RELEASE_URL"
-          echo "release_url=$RELEASE_URL" >> "$GITHUB_OUTPUT"
-
-  # ==========================================================================
-  # Phase 4: Update release branch
-  # ==========================================================================
+  #############################################################################
+  # Helm-Specific: Update Release Branch
+  #############################################################################
   update-release-branch:
-    needs: [validate-tag, package-chart, publish-release]
-    if: needs.validate-tag.outputs.valid == 'true'
+    needs: release
+    if: needs.release.outputs.artifact != ''
     runs-on: ubuntu-latest
     steps:
       - name: Load secrets from 1Password
@@ -453,40 +95,50 @@ jobs:
         with:
           version: 'latest'
 
-      - name: Download Package
-        uses: actions/download-artifact@v7
-        with:
-          name: chart-package-${{ needs.validate-tag.outputs.chart }}-${{ needs.validate-tag.outputs.version }}
-          path: packages/
-
-      - name: Update Release Branch
+      - name: Download Package from Release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ARTIFACT: ${{ needs.release.outputs.artifact }}
+          VERSION: ${{ needs.release.outputs.version }}
         run: |
-          CHART="${{ needs.validate-tag.outputs.chart }}"
-          VERSION="${{ needs.validate-tag.outputs.version }}"
-          TAG="${{ needs.validate-tag.outputs.tag }}"
-          PACKAGE_NAME="${CHART}-${VERSION}.tgz"
+          TAG="${ARTIFACT}-v${VERSION}"
+          PACKAGE_NAME="${ARTIFACT}-${VERSION}.tgz"
 
-          echo "::group::Processing package"
-          ls -la packages/
+          echo "::group::Downloading package from release"
+          gh release download "$TAG" \
+            --repo "${{ github.repository }}" \
+            --pattern "$PACKAGE_NAME" \
+            --dir .
           echo "::endgroup::"
 
-          if [[ -f "packages/$PACKAGE_NAME" ]]; then
-            cp "packages/$PACKAGE_NAME" .
-            echo "::notice::Copied $PACKAGE_NAME"
-
-            # Update index.yaml for this package
-            if [[ -f index.yaml ]]; then
-              helm repo index . \
-                --url "https://github.com/${{ github.repository }}/releases/download/$TAG" \
-                --merge index.yaml
-            else
-              helm repo index . \
-                --url "https://github.com/${{ github.repository }}/releases/download/$TAG"
-            fi
-          else
-            echo "::error::Package not found: packages/$PACKAGE_NAME"
+          if [[ ! -f "$PACKAGE_NAME" ]]; then
+            echo "::error::Package not found: $PACKAGE_NAME"
             exit 1
           fi
+
+          echo "::notice::Downloaded $PACKAGE_NAME"
+
+      - name: Update Release Branch
+        env:
+          ARTIFACT: ${{ needs.release.outputs.artifact }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          TAG="${ARTIFACT}-v${VERSION}"
+          PACKAGE_NAME="${ARTIFACT}-${VERSION}.tgz"
+
+          echo "::group::Updating release branch"
+
+          # Update index.yaml
+          if [[ -f index.yaml ]]; then
+            helm repo index . \
+              --url "https://github.com/${{ github.repository }}/releases/download/$TAG" \
+              --merge index.yaml
+          else
+            helm repo index . \
+              --url "https://github.com/${{ github.repository }}/releases/download/$TAG"
+          fi
+
+          echo "::endgroup::"
 
           # Show changes
           echo "::group::Index changes"
@@ -494,8 +146,8 @@ jobs:
           echo "::endgroup::"
 
           # Commit and push
-          git add index.yaml *.tgz
-          git commit -m "chore(release): publish $CHART v$VERSION
+          git add index.yaml "$PACKAGE_NAME"
+          git commit -m "chore(release): publish $ARTIFACT v$VERSION
 
           Tag: $TAG
           Workflow: ${{ github.run_id }}
@@ -503,45 +155,4 @@ jobs:
 
           git push origin release
 
-          echo "::notice::Updated release branch with $CHART v$VERSION"
-
-  # ==========================================================================
-  # Summary
-  # ==========================================================================
-  summary:
-    needs: [validate-tag, package-chart, publish-release, update-release-branch]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Generate Summary
-        run: |
-          {
-            echo "## Release Atomic Chart - Summary"
-            echo ""
-            echo "### Tag Information"
-            echo "- **Tag**: ${{ needs.validate-tag.outputs.tag }}"
-            echo "- **Trigger**: ${{ github.event_name }}"
-            echo "- **Chart**: ${{ needs.validate-tag.outputs.chart }}"
-            echo "- **Version**: ${{ needs.validate-tag.outputs.version }}"
-            echo ""
-            echo "### Results"
-            echo "| Phase | Status |"
-            echo "|-------|--------|"
-            echo "| Validate Tag | ${{ needs.validate-tag.result == 'success' && ':white_check_mark:' || ':x:' }} |"
-            echo "| Package Chart | ${{ needs.package-chart.result == 'success' && ':white_check_mark:' || (needs.package-chart.result == 'skipped' && ':heavy_minus_sign:' || ':x:') }} |"
-            echo "| Publish Release | ${{ needs.publish-release.result == 'success' && ':white_check_mark:' || (needs.publish-release.result == 'skipped' && ':heavy_minus_sign:' || ':x:') }} |"
-            echo "| Update Release Branch | ${{ needs.update-release-branch.result == 'success' && ':white_check_mark:' || (needs.update-release-branch.result == 'skipped' && ':heavy_minus_sign:' || ':x:') }} |"
-            echo ""
-            if [[ "${{ needs.validate-tag.outputs.valid }}" == "true" ]]; then
-              echo "### Distribution"
-              echo "| Channel | URL |"
-              echo "|---------|-----|"
-              echo "| GHCR (OCI) | \`ghcr.io/${{ github.repository }}/${{ needs.validate-tag.outputs.chart }}:${{ needs.validate-tag.outputs.version }}\` |"
-              echo "| Helm Repo | \`helm repo add arustydev https://charts.arusty.dev\` |"
-              echo "| GitHub Release | [Release](https://github.com/${{ github.repository }}/releases/tag/${{ needs.validate-tag.outputs.tag }}) |"
-            else
-              echo "### Validation Failed"
-              echo "The tag did not pass validation. Check the logs for details."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
+          echo "::notice::Updated release branch with $ARTIFACT v$VERSION"

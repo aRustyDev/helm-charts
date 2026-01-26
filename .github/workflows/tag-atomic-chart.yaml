@@ -1,11 +1,15 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+#
 # Tag Atomic Chart (W6-Tag)
 #
 # Creates release tags for charts when changes are merged to main.
 # This workflow triggers on push to main with chart changes, then creates
 # tags in the format <chart>-v<version> which trigger the release workflow.
 #
+# Calls reusable workflow from aRustyDev/gh.
+#
 # Flow:
-#   Push to main (charts/**) → W6-Tag creates tags → W6 releases each tagged chart
+#   Push to main (charts/**) -> W6-Tag creates tags -> W6 releases each tagged chart
 
 name: Tag Atomic Chart
 
@@ -24,223 +28,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ==========================================================================
-  # Detect changed charts and create tags
-  # ==========================================================================
   create-tags:
-    runs-on: ubuntu-latest
-    outputs:
-      tags_created: ${{ steps.create-tags.outputs.tags_created }}
-      charts: ${{ steps.detect.outputs.charts }}
-    steps:
-      - name: Load secrets from 1Password
-        id: op-secrets
-        uses: 1password/load-secrets-action@v3
-        with:
-          export-env: false
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          X_REPO_AUTH_APP_ID: op://gh-shared/xauth/app/id
-          X_REPO_AUTH_PRIVATE_KEY: op://gh-shared/xauth/app/private-key.pem
-
-      - name: Generate GitHub App Token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
-          private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
-
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Detect Changed Charts
-        id: detect
-        run: |
-          source .github/scripts/attestation-lib.sh
-
-          CHARTS=$(detect_changed_charts "HEAD~1..HEAD")
-
-          if [[ -z "$CHARTS" ]]; then
-            echo "::notice::No chart changes detected, skipping tagging"
-            echo "charts=" >> "$GITHUB_OUTPUT"
-            echo "has_charts=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "charts=$CHARTS" >> "$GITHUB_OUTPUT"
-          echo "has_charts=true" >> "$GITHUB_OUTPUT"
-          echo "::notice::Charts to tag: $CHARTS"
-
-      - name: Find Source PR
-        id: source-pr
-        if: steps.detect.outputs.has_charts == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          source .github/scripts/attestation-lib.sh
-
-          PR_NUMBER=$(get_source_pr "${{ github.sha }}")
-
-          if [[ -z "$PR_NUMBER" ]]; then
-            echo "::warning::Could not find source PR for commit ${{ github.sha }}"
-            echo "pr_number=" >> "$GITHUB_OUTPUT"
-            echo "attestation_map={}" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::Source PR: #$PR_NUMBER"
-            echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-
-            ATTESTATION_MAP=$(extract_attestation_map "$PR_NUMBER")
-            echo "attestation_map=$ATTESTATION_MAP" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Create Tags
-        id: create-tags
-        if: steps.detect.outputs.has_charts == 'true'
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          source .github/scripts/attestation-lib.sh
-
-          CHARTS="${{ steps.detect.outputs.charts }}"
-          PR_NUMBER="${{ steps.source-pr.outputs.pr_number }}"
-          ATTESTATION_MAP='${{ steps.source-pr.outputs.attestation_map }}'
-          COMMIT_SHA="${{ github.sha }}"
-
-          CREATED_TAGS=""
-          SKIPPED=""
-          FAILED=false
-
-          for chart in $CHARTS; do
-            echo "::group::Processing $chart"
-
-            CHART_YAML="charts/$chart/Chart.yaml"
-            if [[ ! -f "$CHART_YAML" ]]; then
-              echo "::warning::Chart.yaml not found for $chart, skipping"
-              echo "::endgroup::"
-              continue
-            fi
-
-            VERSION=$(grep '^version:' "$CHART_YAML" | awk '{print $2}' | tr -d '"' | tr -d "'")
-            if [[ -z "$VERSION" ]]; then
-              echo "::error::Could not extract version from $CHART_YAML"
-              FAILED=true
-              echo "::endgroup::"
-              continue
-            fi
-
-            TAG_NAME="${chart}-v${VERSION}"
-            echo "Tag: $TAG_NAME, Version: $VERSION"
-
-            # Check if tag already exists
-            if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
-              EXISTING_COMMIT=$(git rev-list -n 1 "$TAG_NAME")
-              if [[ "$EXISTING_COMMIT" == "$COMMIT_SHA" ]]; then
-                echo "::notice::Tag $TAG_NAME already exists at this commit, skipping"
-                SKIPPED="${SKIPPED} ${TAG_NAME}"
-                echo "::endgroup::"
-                continue
-              else
-                echo "::error::Tag $TAG_NAME exists but points to different commit!"
-                echo "::error::This indicates version was not bumped properly."
-                FAILED=true
-                echo "::endgroup::"
-                continue
-              fi
-            fi
-
-            # Extract changelog
-            CHANGELOG=$(extract_changelog_for_version "$chart" "$VERSION")
-
-            # Format attestation lineage
-            if [[ -n "$ATTESTATION_MAP" && "$ATTESTATION_MAP" != "{}" ]]; then
-              ATTESTATION_LINEAGE=$(echo "$ATTESTATION_MAP" | jq -r 'to_entries | .[] | "- \(.key): \(.value)"' 2>/dev/null || echo "- Parse error")
-            else
-              ATTESTATION_LINEAGE="- No attestation data available"
-            fi
-
-            # Create annotated tag
-            git tag -a "$TAG_NAME" -m "$(cat <<EOF
-          Release: $chart v$VERSION
-
-          Attestation Lineage:
-          $ATTESTATION_LINEAGE
-
-          Changelog:
-          $CHANGELOG
-
-          Source PR: #${PR_NUMBER:-unknown}
-          Commit: $COMMIT_SHA
-          EOF
-          )"
-
-            git push origin "$TAG_NAME"
-            echo "::notice::Created and pushed tag: $TAG_NAME"
-
-            # Track created tags
-            if [[ -z "$CREATED_TAGS" ]]; then
-              CREATED_TAGS="$TAG_NAME"
-            else
-              CREATED_TAGS="${CREATED_TAGS},${TAG_NAME}"
-            fi
-
-            echo "::endgroup::"
-          done
-
-          echo "tags_created=$CREATED_TAGS" >> "$GITHUB_OUTPUT"
-          echo "skipped=$SKIPPED" >> "$GITHUB_OUTPUT"
-
-          if [[ "$FAILED" == "true" ]]; then
-            echo "::error::One or more tags failed to create"
-            exit 1
-          fi
-
-          if [[ -n "$CREATED_TAGS" ]]; then
-            echo "::notice::Tags created: $CREATED_TAGS"
-            echo "::notice::Release workflow (W6) will trigger for each tag"
-          fi
-
-  # ==========================================================================
-  # Summary
-  # ==========================================================================
-  summary:
-    needs: create-tags
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Generate Summary
-        run: |
-          {
-            echo "## Tag Atomic Chart - Summary"
-            echo ""
-            echo "### Commit"
-            echo "- SHA: ${{ github.sha }}"
-            echo "- Message: ${{ github.event.head_commit.message }}"
-            echo ""
-            echo "### Results"
-            echo "| Phase | Status |"
-            echo "|-------|--------|"
-            echo "| Create Tags | ${{ needs.create-tags.result == 'success' && ':white_check_mark:' || ':x:' }} |"
-            echo ""
-            if [[ -n "${{ needs.create-tags.outputs.tags_created }}" ]]; then
-              echo "### Tags Created"
-              echo "\`\`\`"
-              echo "${{ needs.create-tags.outputs.tags_created }}" | tr ',' '\n'
-              echo "\`\`\`"
-              echo ""
-              echo "> These tags will trigger the Release Atomic Chart (W6) workflow."
-            elif [[ -n "${{ needs.create-tags.outputs.charts }}" ]]; then
-              echo "### No Tags Created"
-              echo "Charts detected: ${{ needs.create-tags.outputs.charts }}"
-              echo "Tags may have been skipped (already exist) or failed to create."
-            else
-              echo "No chart changes detected in this push."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+    uses: aRustyDev/gh/.github/workflows/atomic-release-create-release-tags.yml@atomic-release-v0.1.0
+    with:
+      artifact_path: "charts"
+      manifest_file: "Chart.yaml"
+      github_app_id_secret_ref: "op://gh-shared/xauth/app/id"
+      github_app_key_secret_ref: "op://gh-shared/xauth/app/private-key.pem"
+    secrets:
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
