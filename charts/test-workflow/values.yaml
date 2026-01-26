@@ -21,3 +21,9 @@ resources: {}
 e2e:
   enabled: true
   message: "Hello from E2E test"
+
+# E2E-1 Test: Valid feature addition
+e2eTest:
+  enabled: false
+  replicas: 1
+  message: "Hello from E2E-1"
