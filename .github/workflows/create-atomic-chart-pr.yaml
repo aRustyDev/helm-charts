@@ -35,9 +35,8 @@ permissions:
   id-token: write
   attestations: write
 
-concurrency:
-  group: atomize-charts-${{ github.sha }}
-  cancel-in-progress: false
+# NOTE: Concurrency is handled by the reusable workflow
+# Do not add concurrency here - it causes a deadlock with the reusable workflow's concurrency
 
 jobs:
   atomize:
