@@ -85,7 +85,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install ArtifactHub CLI
         env:
@@ -130,7 +130,7 @@ jobs:
       fail-fast: false
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -144,7 +144,7 @@ jobs:
           python-version: '3.11'
 
       - name: Set up chart-testing
-        uses: helm/chart-testing-action@v2.7.0
+        uses: helm/chart-testing-action@v2.8.0
 
       - name: Create kind cluster
         uses: helm/kind-action@v1.13.0
@@ -172,7 +172,7 @@ jobs:
       - name: Generate Test Attestation
         id: test-attestation
         if: success()
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v3
         with:
           subject-name: "k8s-test-${{ matrix.k8s_version }}"
           subject-digest: ${{ steps.digest.outputs.digest }}
