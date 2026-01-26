@@ -70,7 +70,7 @@ jobs:
       is_dependabot: ${{ steps.source.outputs.is_dependabot }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -198,7 +198,7 @@ jobs:
       result: ${{ steps.result.outputs.status }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           # Use GITHUB_TOKEN which should have push access via ruleset bypass
@@ -416,7 +416,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Generate W2 attestation
         id: digest
@@ -442,7 +442,7 @@ jobs:
 
       - name: Create attestation
         id: attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v3
         with:
           subject-name: "w2-filter-charts"
           subject-digest: ${{ steps.digest.outputs.digest }}
@@ -494,7 +494,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ github.token }}
