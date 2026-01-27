@@ -1,0 +1,11 @@
+{{- if .Values.e2e2.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "test-workflow.fullname" . }}-e2e-2
+  labels:
+    {{- include "test-workflow.labels" . | nindent 4 }}
+    e2e-test: "2"
+data:
+  prometheus-scrape: {{ .Values.e2e2.serviceAnnotations | toJson | quote }}
+{{- end }}

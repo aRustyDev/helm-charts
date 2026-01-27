@@ -14,6 +14,14 @@ fullnameOverride: ""
 service:
   type: ClusterIP
   port: 80
+  annotations: {}
+
+# E2E-2 Test: Service annotations feature
+e2e2:
+  enabled: false
+  serviceAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "80"
 
 resources: {}
 
