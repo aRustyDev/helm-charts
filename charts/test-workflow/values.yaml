@@ -35,3 +35,11 @@ e2eTest:
   enabled: false
   replicas: 1
   message: "Hello from E2E-1"
+
+# E2E-3 Test: Health check configuration
+e2e3:
+  enabled: false
+  healthCheck:
+    path: "/health"
+    port: 8080
+    initialDelaySeconds: 10
