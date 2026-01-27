@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.3] - 2026-01-27
+
+### Changed
+- chore(test-workflow): sync from integration
+
 ## [0.1.2] - 2026-01-20
 
 ### Changed
