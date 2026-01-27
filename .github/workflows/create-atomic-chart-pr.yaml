@@ -40,7 +40,7 @@ permissions:
 
 jobs:
   atomize:
-    uses: aRustyDev/gh/.github/workflows/atomic-release-atomize-changes.yml@atomic-release-v0.1.0
+    uses: aRustyDev/gh/.github/workflows/atomic-release-atomize-changes.yml@atomic-release-v0.1.1
     with:
       artifact_path: "charts"
       manifest_file: "Chart.yaml"
