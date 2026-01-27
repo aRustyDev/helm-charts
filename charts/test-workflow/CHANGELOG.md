@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.0] - 2026-01-26
+
+### Changed
+- feat(test-workflow): add e2e test configmap feature (#160)
+
 ## [0.1.2] - 2026-01-20
 
 ### Changed
