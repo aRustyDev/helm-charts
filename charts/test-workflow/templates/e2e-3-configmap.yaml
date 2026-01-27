@@ -1,0 +1,13 @@
+{{- if .Values.e2e3.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "test-workflow.fullname" . }}-e2e-3
+  labels:
+    {{- include "test-workflow.labels" . | nindent 4 }}
+    e2e-test: "3"
+data:
+  health-check-path: {{ .Values.e2e3.healthCheck.path | quote }}
+  health-check-port: {{ .Values.e2e3.healthCheck.port | quote }}
+  initial-delay: {{ .Values.e2e3.healthCheck.initialDelaySeconds | quote }}
+{{- end }}
