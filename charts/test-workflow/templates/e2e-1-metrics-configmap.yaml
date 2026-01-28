@@ -1,0 +1,13 @@
+{{- if .Values.metrics.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "test-workflow.fullname" . }}-metrics
+  labels:
+    {{- include "test-workflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+data:
+  METRICS_ENABLED: "true"
+  METRICS_PORT: {{ .Values.metrics.port | quote }}
+  METRICS_PATH: {{ .Values.metrics.path | quote }}
+{{- end }}
