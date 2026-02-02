@@ -52,7 +52,7 @@ jobs:
       changed_charts: ${{ steps.detect.outputs.changed_charts }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -118,7 +118,7 @@ jobs:
 
       - name: Generate attestation
         id: attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v3
         with:
           subject-name: "w1-lint"
           subject-digest: ${{ steps.digest.outputs.digest }}
@@ -145,7 +145,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install ArtifactHub CLI
         env:
@@ -182,7 +182,7 @@ jobs:
 
       - name: Generate attestation
         id: attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v3
         with:
           subject-name: "w1-artifacthub-lint"
           subject-digest: ${{ steps.digest.outputs.digest }}
@@ -207,7 +207,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -225,7 +225,7 @@ jobs:
 
       - name: Generate attestation
         id: attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v3
         with:
           subject-name: "w1-commit-validation"
           subject-digest: ${{ steps.digest.outputs.digest }}
@@ -252,7 +252,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -307,7 +307,7 @@ jobs:
 
       - name: Add changelog comment to PR
         if: github.event_name == 'pull_request'
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@v5
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body-path: changelog.md
@@ -320,7 +320,7 @@ jobs:
 
       - name: Generate attestation
         id: attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v3
         with:
           subject-name: "w1-changelog"
           subject-digest: ${{ steps.digest.outputs.digest }}
