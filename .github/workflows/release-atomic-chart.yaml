@@ -90,7 +90,7 @@ jobs:
           echo "::notice::Version: $VERSION"
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.parse.outputs.tag }}
 
@@ -156,7 +156,7 @@ jobs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
       - name: Checkout Tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.validate-tag.outputs.tag }}
 
@@ -195,7 +195,7 @@ jobs:
           echo "::notice::Digest: sha256:$DIGEST"
 
       - name: Generate Build Attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v3
         with:
           subject-path: ${{ steps.build.outputs.package }}
 
@@ -252,7 +252,7 @@ jobs:
 
       - name: Generate GitHub App Token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
           private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
@@ -432,13 +432,13 @@ jobs:
 
       - name: Generate GitHub App Token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
           private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
 
       - name: Checkout Release Branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: release
           token: ${{ steps.app-token.outputs.token }}
