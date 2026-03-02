@@ -52,7 +52,7 @@ jobs:
 
       - name: Generate GitHub App Token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
           private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
@@ -86,7 +86,7 @@ jobs:
       source_pr: ${{ github.event.pull_request.number }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: integration
@@ -148,7 +148,7 @@ jobs:
       created_prs: ${{ steps.create-prs.outputs.prs }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ needs.generate-token.outputs.token }}
@@ -296,7 +296,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ needs.generate-token.outputs.token }}
@@ -373,7 +373,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ needs.generate-token.outputs.token }}
