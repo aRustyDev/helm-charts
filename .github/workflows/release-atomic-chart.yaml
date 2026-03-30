@@ -90,7 +90,7 @@ jobs:
           echo "::notice::Version: $VERSION"
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.parse.outputs.tag }}
 
@@ -156,12 +156,12 @@ jobs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
       - name: Checkout Tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.validate-tag.outputs.tag }}
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: 'latest'
 
@@ -195,12 +195,12 @@ jobs:
           echo "::notice::Digest: sha256:$DIGEST"
 
       - name: Generate Build Attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: ${{ steps.build.outputs.package }}
 
       - name: Upload Package Artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: chart-package-${{ needs.validate-tag.outputs.chart }}-${{ needs.validate-tag.outputs.version }}
           path: ${{ steps.build.outputs.package }}
@@ -215,7 +215,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download Package
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: chart-package-${{ needs.validate-tag.outputs.chart }}-${{ needs.validate-tag.outputs.version }}
           path: .cr-release-packages/
@@ -242,7 +242,7 @@ jobs:
 
       - name: Load secrets from 1Password
         id: op-secrets
-        uses: 1password/load-secrets-action@v3
+        uses: 1password/load-secrets-action@v4
         with:
           export-env: false
         env:
@@ -252,13 +252,13 @@ jobs:
 
       - name: Generate GitHub App Token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
           private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: 'latest'
 
@@ -266,7 +266,7 @@ jobs:
         uses: sigstore/cosign-installer@v3
 
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -422,7 +422,7 @@ jobs:
     steps:
       - name: Load secrets from 1Password
         id: op-secrets
-        uses: 1password/load-secrets-action@v3
+        uses: 1password/load-secrets-action@v4
         with:
           export-env: false
         env:
@@ -432,13 +432,13 @@ jobs:
 
       - name: Generate GitHub App Token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ steps.op-secrets.outputs.X_REPO_AUTH_APP_ID }}
           private-key: ${{ steps.op-secrets.outputs.X_REPO_AUTH_PRIVATE_KEY }}
 
       - name: Checkout Release Branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: release
           token: ${{ steps.app-token.outputs.token }}
@@ -449,12 +449,12 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: 'latest'
 
       - name: Download Package
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: chart-package-${{ needs.validate-tag.outputs.chart }}-${{ needs.validate-tag.outputs.version }}
           path: packages/
